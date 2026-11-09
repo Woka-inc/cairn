@@ -3,7 +3,8 @@
 import path from 'node:path'
 import { renderWayfinding } from './guide.mjs'
 import { asList } from './graph.mjs'
-import { bytes, cell, clip, naturalCompare, oneLine } from './util.mjs'
+import { HUB_SHARE, HUB_MIN } from './config.mjs'
+import { bytes, cell, clip, kb, naturalCompare, oneLine } from './util.mjs'
 
 const MAX_LIST_ITEMS = 20
 const MAX_ATTRIBUTE_VALUES = 20
@@ -55,13 +56,44 @@ function frontValue(value) {
   return q(valueText(value))
 }
 
-/** Plan all output files. Returns { files: Map<rel, content>, counts, oversized: [] }. */
+/** The kind of a node (value of config.kindField), '' when kindField is not set or the node has none. */
+const kindOf = (config, node) => (config.kindField ? valueText(node.data[config.kindField]) : '')
+
+/**
+ * Which relation rows each kind of node carries. Without kindField every node is of one kind, so a row is
+ * left out only when no node at all uses the edge. A forward row (and the two-hop row) is kept for a kind when
+ * some node of that kind has the edge field at all, even an empty list; a reverse row is kept when some node of
+ * that kind is the target of the edge.
+ */
+function relationRows(config, nodes, forward) {
+  const uses = new Map()
+  const targeted = new Map()
+  const add = (map, kind, field) => {
+    if (!map.has(kind)) map.set(kind, new Set())
+    map.get(kind).add(field)
+  }
+  const kindById = new Map(nodes.map((n) => [n.id, kindOf(config, n)]))
+  for (const node of nodes) {
+    const kind = kindById.get(node.id)
+    for (const edge of config.edges) {
+      if (Object.prototype.hasOwnProperty.call(node.data, edge.field)) add(uses, kind, edge.field)
+      for (const t of forward[edge.field].get(node.id)) if (kindById.has(t)) add(targeted, kindById.get(t), edge.field)
+    }
+  }
+  return {
+    forward: (kind, field) => uses.get(kind)?.has(field) ?? false,
+    reverse: (kind, field) => targeted.get(kind)?.has(field) ?? false,
+  }
+}
+
+/** Plan all output files. Returns { files: Map<rel, content>, counts }. */
 export function planVault(config, loaded, graph) {
   const { nodes } = loaded
   const { byId, forward, reverse } = graph
   const files = new Map()
   const k = config.k
   const sn = config.sharedNeighbors
+  const rows = relationRows(config, nodes, forward)
   const ref = (id) => {
     if (!config.card.titlesInRelations) return id
     const node = byId.get(id)
@@ -90,23 +122,25 @@ export function planVault(config, loaded, graph) {
         lines.push('')
       }
     }
-    // Relations section, always last.
-    lines.push('## Relations', '')
+    // Relations section, always last. Rows for edges that this kind of node never has are left out.
+    const kind = kindOf(config, node)
+    const rel = []
     for (const edge of config.edges) {
+      if (!rows.forward(kind, edge.field)) continue
       const targets = forward[edge.field].get(node.id)
-      lines.push(`- ${edge.label}: ${targets.length ? list(targets) : 'none'}`)
+      rel.push(`- ${edge.label}: ${targets.length ? list(targets) : 'none'}`)
     }
     for (const edge of config.edges) {
-      if (!edge.reverse) continue
+      if (!edge.reverse || !rows.reverse(kind, edge.field)) continue
       const sources = reverse[edge.field].get(node.id) ?? []
       let text = 'none'
       if (sources.length) {
         text = list(sources.slice(0, k))
         if (sources.length > k) text += ` ${truncationMarker(k, sources.length, `capped at k=${k}`)}`
       }
-      lines.push(`- ${edge.reverse} (reverse of ${edge.label}): ${text}`)
+      rel.push(`- ${edge.reverse} (reverse of ${edge.label}): ${text}`)
     }
-    if (sn) {
+    if (sn && rows.forward(kind, sn.via)) {
       const s = graph.shared(node.id)
       let text = 'none'
       if (s.total > 0) {
@@ -115,16 +149,16 @@ export function planVault(config, loaded, graph) {
           text = shown
         } else {
           const reasons = []
-          if (s.hubs) reasons.push(`${s.hubs} hub${s.hubs > 1 ? 's' : ''} skipped: ${sn.via} targets used by ≥${sn.hubThreshold} nodes`)
+          if (s.hubs) reasons.push(`${s.hubs} hub${s.hubs > 1 ? 's' : ''} skipped: ${sn.via} targets used by ≥${graph.hub.threshold} nodes`)
           if (s.capped) reasons.push(`capped at k=${k}`)
           if (!reasons.length) reasons.push('partial')
           text = `${shown || 'none shown'} ${truncationMarker(s.shown.length, s.total, reasons.join('; '))}`
         }
       }
       const viaLabel = config.edges.find((e) => e.field === sn.via).label
-      lines.push(`- ${sn.label} (two hops via ${viaLabel}): ${text}`)
+      rel.push(`- ${sn.label} (two hops via ${viaLabel}): ${text}`)
     }
-    lines.push('')
+    if (rel.length) lines.push('## Relations', '', ...rel, '')
     files.set(`cards/${node.stem}.md`, `${fm.join('\n')}\n${lines.join('\n')}`)
     if (config.bodies) {
       const body = node.body.replace(/^\s+/, '').replace(/\s+$/, '')
@@ -134,7 +168,7 @@ export function planVault(config, loaded, graph) {
 
   // CATALOG: one row per node.
   const cols = ['id', 'title', ...config.attributes, ...config.catalog.edgeColumns]
-  const rows = nodes.map((node) => {
+  const tableRows = nodes.map((node) => {
     const cells = [cell(node.id), cell(node.title)]
     for (const attr of config.attributes) cells.push(cell(valueText(node.data[attr])))
     for (const field of config.catalog.edgeColumns) cells.push(cell(forward[field].get(node.id).join(', ')))
@@ -147,7 +181,7 @@ export function planVault(config, loaded, graph) {
     '',
     `| ${cols.join(' | ')} |`,
     `|${cols.map(() => '---').join('|')}|`,
-    ...rows,
+    ...tableRows,
     '',
   ].join('\n'))
 
@@ -184,7 +218,10 @@ export function planVault(config, loaded, graph) {
       for (const targets of forward[edge.field].values()) total += targets.length
       index.push(`- ${edge.field} (${edge.label}${edge.reverse ? `; reverse: ${edge.reverse}` : ''}${edge.external ? '; external targets' : ''}): ${total}`)
     }
-    if (sn) index.push(`- two-hop: ${sn.label} via ${sn.via} (hubs: targets used by ≥${sn.hubThreshold} nodes; k=${k})`)
+    if (sn) {
+      const how = graph.hub.auto ? `automatic: ${Math.round(HUB_SHARE * 100)}% of the ${graph.hub.users} nodes that use ${sn.via}, at least ${HUB_MIN}` : 'set in the config'
+      index.push(`- two-hop: ${sn.label} via ${sn.via} (hubs: targets used by ≥${graph.hub.threshold} nodes, ${how}; k=${k})`)
+    }
     index.push('')
   }
   files.set('INDEX.md', index.join('\n'))
@@ -193,7 +230,7 @@ export function planVault(config, loaded, graph) {
   const sorted = new Map([...files.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)))
   return {
     files: sorted,
-    counts: { nodes: nodes.length, cards: nodes.length, bodies: config.bodies ? nodes.length : 0, catalogRows: rows.length },
+    counts: { nodes: nodes.length, cards: nodes.length, bodies: config.bodies ? nodes.length : 0, catalogRows: tableRows.length },
   }
 }
 
@@ -211,4 +248,25 @@ export function oversized(config, files) {
     if (n > limit) over.push({ rel, bytes: n, limit, kind })
   }
   return over
+}
+
+/** Actual sizes against the targets: { card: { rel, bytes, limit } | null, catalog, index }. */
+export function sizeReport(config, files) {
+  let card = null
+  for (const [rel, content] of files) {
+    if (!rel.startsWith('cards/')) continue
+    const n = bytes(content)
+    if (!card || n > card.bytes) card = { rel, bytes: n, limit: config.card.maxBytes }
+  }
+  const one = (rel, limit) => (files.has(rel) ? { rel, bytes: bytes(files.get(rel)), limit } : null)
+  return { card, catalog: one('CATALOG.md', config.catalog.maxBytes), index: one('INDEX.md', config.index.maxBytes) }
+}
+
+/** "largest card 2.9KB of 3.0KB (cards/x.md), CATALOG 6.1KB of 8.0KB, INDEX 1.2KB of 4.0KB" */
+export function describeSizes(sizes) {
+  const parts = []
+  if (sizes.card) parts.push(`largest card ${kb(sizes.card.bytes)} of ${kb(sizes.card.limit)} (${sizes.card.rel})`)
+  if (sizes.catalog) parts.push(`CATALOG ${kb(sizes.catalog.bytes)} of ${kb(sizes.catalog.limit)}`)
+  if (sizes.index) parts.push(`INDEX ${kb(sizes.index.bytes)} of ${kb(sizes.index.limit)}`)
+  return parts.join(', ')
 }

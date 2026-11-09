@@ -58,7 +58,8 @@ test('an exceeded size target fails the build and leaves the previous vault unto
   assert.throws(() => build(tight), (error) => {
     assert.ok(error instanceof CairnError)
     assert.match(error.message, /size targets exceeded; the vault was not replaced/)
-    assert.ok(error.details.some((d) => /^cards\/qs-io-s3\.md: \d+\.\dKB > 0\.7KB \(card target\)$/.test(d)), error.details.join('\n'))
+    assert.ok(error.details.some((d) => /^cards\/qs-io-s3\.md: \d+\.\dKB > 0\.7KB \(card target; \d+ bytes over\)$/.test(d)), error.details.join('\n'))
+    assert.ok(error.details.some((d) => /^Actual sizes: largest card \d+\.\dKB of 0\.7KB \(cards\/.+\.md\), CATALOG /.test(d)), error.details.join('\n'))
     return true
   })
   const after = snapshot(path.join(dir, 'vault'))
@@ -100,7 +101,7 @@ test('a changed input changes the fingerprint; check reports stale and --if-stal
   const res = check(config)
   assert.equal(res.ok, false)
   assert.equal(res.stale, true)
-  assert.ok(res.problems.some((p) => p.startsWith('stale: source files changed')), res.problems.join('\n'))
+  assert.ok(res.problems.some((p) => p.startsWith('stale: node files changed')), res.problems.join('\n'))
   assert.equal(build(config, { ifStale: true }).action, 'built')
   assert.equal(check(config).ok, true)
 

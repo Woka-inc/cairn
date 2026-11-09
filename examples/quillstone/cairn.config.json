@@ -1,4 +1,9 @@
 {
+  "$comment": [
+    "Differs from the defaults on purpose: k is 6 (default 10) and the size targets are smaller (card 3072 bytes instead of 5120, catalog 8192 instead of 20480).",
+    "k is 6 so that the truncation marker '(K of N shown — reason)' appears on real cards; with only 35 short notes, k = 10 would rarely cut a list. The size targets are smaller because these notes are short: a tighter target still leaves room and checks more strictly.",
+    "For your own knowledge base, start from the defaults. hubThreshold is left out, so it is automatic: 25% of the nodes that use design_docs, at least 3."
+  ],
   "source": {
     "dir": "kb",
     "include": ["**/*.md"],
@@ -7,6 +12,7 @@
   "idField": "id",
   "titleField": "title",
   "descriptionField": "summary",
+  "kindField": "kind",
   "attributes": ["kind", "layer", "stability", "language", "owner", "status"],
   "edges": [
     { "field": "depends_on", "label": "Depends on", "reverse": "Used by" },
@@ -15,8 +21,7 @@
   ],
   "sharedNeighbors": {
     "via": "design_docs",
-    "label": "Shares design docs with",
-    "hubThreshold": 10
+    "label": "Shares design docs with"
   },
   "k": 6,
   "card": {
@@ -31,5 +36,8 @@
   "catalog": {
     "maxBytes": 8192
   },
-  "output": "cairn-vault"
+  "output": "cairn-vault",
+  "wayfinding": {
+    "instructionFile": "AGENTS.md"
+  }
 }

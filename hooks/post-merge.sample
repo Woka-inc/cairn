@@ -1,19 +1,31 @@
 #!/bin/sh
 # Cairn: rebuild the vault after git pull / merge / checkout when its inputs changed.
-# Install (from the knowledge-base repository root):
+# Install (from the root of the git repository that holds the notes):
 #   cp path/to/cairn/hooks/post-merge.sample .git/hooks/post-merge
 #   cp path/to/cairn/hooks/post-merge.sample .git/hooks/post-checkout
 #   chmod +x .git/hooks/post-merge .git/hooks/post-checkout
-# Then set the two paths below (relative to the repository root or absolute).
-# The hook never blocks git: it always exits 0 and only prints a note on failure.
+# Then set the two paths below. A relative path is resolved from the repository root, because the hook
+# changes to it first. If the config lives outside the repository (for example one level up, next to the
+# notes repository), use "../cairn.config.json" or an absolute path. The same applies to CAIRN_BIN.
+# The hook never blocks git: it always exits 0 and prints one line when it skips or fails.
 CAIRN_BIN="${CAIRN_BIN:-tools/cairn/bin/cairn.mjs}"
 CAIRN_CONFIG="${CAIRN_CONFIG:-cairn.config.json}"
 
+if ! command -v node >/dev/null 2>&1; then
+  echo "cairn hook: skipped: node not found on PATH (the vault was not rebuilt)" >&2
+  exit 0
+fi
 root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$root" || exit 0
-[ -f "$CAIRN_BIN" ] && [ -f "$CAIRN_CONFIG" ] || exit 0
-command -v node >/dev/null 2>&1 || exit 0
+if [ ! -f "$CAIRN_CONFIG" ]; then
+  echo "cairn hook: skipped: config not found: $CAIRN_CONFIG (relative to $root; set CAIRN_CONFIG at the top of this hook)" >&2
+  exit 0
+fi
+if [ ! -f "$CAIRN_BIN" ]; then
+  echo "cairn hook: skipped: Cairn not found: $CAIRN_BIN (relative to $root; set CAIRN_BIN at the top of this hook)" >&2
+  exit 0
+fi
 if ! node "$CAIRN_BIN" build --config "$CAIRN_CONFIG" --if-stale --quiet; then
-  echo "cairn: vault rebuild failed (git was not affected); run: node $CAIRN_BIN build --config $CAIRN_CONFIG" >&2
+  echo "cairn hook: vault rebuild failed (git was not affected); run: node $CAIRN_BIN build --config $CAIRN_CONFIG" >&2
 fi
 exit 0

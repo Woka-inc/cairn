@@ -30,5 +30,4 @@ Make logs searchable and joinable with traces.
 - Design docs: DD-001 (Error model); DD-008 (Telemetry conventions)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-tracing (Tracing)
-- Cited by (reverse of Design docs): none
-- Shares design docs with (two hops via Design docs): qs-devserver (Development server) ×1; qs-io-s3 (Object storage adapter) ×1; qs-metrics (Metrics exporter) ×1; qs-tracing (Tracing) ×1 (4 of 14 shown — 1 hub skipped: design_docs targets used by ≥10 nodes)
+- Shares design docs with (two hops via Design docs): qs-devserver (Development server) ×1; qs-io-s3 (Object storage adapter) ×1; qs-metrics (Metrics exporter) ×1; qs-tracing (Tracing) ×1 (4 of 14 shown — 1 hub skipped: design_docs targets used by ≥7 nodes)

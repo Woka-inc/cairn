@@ -4,8 +4,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { configDigestInput } from './config.mjs'
-import { buildGraph, listSourceFiles, loadNodes } from './graph.mjs'
-import { oversized, planVault } from './render.mjs'
+import { FrontMatterError, readFrontMatter } from './frontmatter.mjs'
+import { renderWayfinding, START_MARKER, END_MARKER } from './guide.mjs'
+import { buildGraph, listSourceFiles, loadNodes, nodeIdOf } from './graph.mjs'
+import { describeSizes, oversized, planVault, sizeReport } from './render.mjs'
 import { CairnError, bytes, kb, sha256, walkFiles } from './util.mjs'
 
 export const TOOL = 'cairn'
@@ -23,10 +25,26 @@ export function generatorId() {
   return { version: pkg.version, sha256: sha256(parts.join('\n')) }
 }
 
-/** Fingerprint of everything the output depends on: source files, config, generator. */
+/**
+ * Fingerprint input for one source file. A file that is not a node (no id field) contributes only its path and
+ * a marker, because its content does not reach the output; editing a README or the instruction file inside
+ * source.dir therefore does not make the vault stale, while giving such a file an id does.
+ */
+function filePart(config, rel) {
+  const text = lf(fs.readFileSync(path.join(config.sourceDir, ...rel.split('/'))))
+  try {
+    const { data } = readFrontMatter(text)
+    if (!nodeIdOf(config, rel, data)) return `${rel}\u0000-`
+  } catch (error) {
+    if (!(error instanceof FrontMatterError)) throw error
+  }
+  return `${rel}\u0000${sha256(text)}`
+}
+
+/** Fingerprint of everything the output depends on: node files, config, generator. */
 export function fingerprint(config) {
   const files = listSourceFiles(config)
-  const parts = files.map((rel) => `${rel}\u0000${sha256(lf(fs.readFileSync(path.join(config.sourceDir, ...rel.split('/')))))}`)
+  const parts = files.map((rel) => filePart(config, rel))
   const inputs = sha256(parts.join('\n'))
   const configSha = sha256(configDigestInput(config))
   const gen = generatorId()
@@ -56,7 +74,23 @@ export function plan(config) {
   return { ...planned, warnings: [...loaded.warnings, ...graph.warnings], over: oversized(config, planned.files), graph, loaded }
 }
 
-const describeOver = (over) => over.map((o) => `${o.rel}: ${kb(o.bytes)} > ${kb(o.limit)} (${o.kind} target)`)
+const describeOver = (over) => over.map((o) => `${o.rel}: ${kb(o.bytes)} > ${kb(o.limit)} (${o.kind} target; ${o.bytes - o.limit} bytes over)`)
+
+/**
+ * Is the vault older than its inputs? Returns { stale, missing, reasons: string[] }. Read-only.
+ * Any config change counts, including wayfinding settings, because WAYFINDING.md is part of the vault.
+ */
+export function staleness(config, fp = fingerprint(config)) {
+  const manifest = readManifest(config.outDir)
+  if (!manifest) return { stale: true, missing: true, reasons: [`no vault in ${config.output} yet`] }
+  if (manifest.fingerprint === fp.fingerprint) return { stale: false, missing: false, reasons: [] }
+  const reasons = []
+  if (manifest.inputs !== fp.inputs) reasons.push('node files changed')
+  if (manifest.config !== fp.config) reasons.push('config changed')
+  if (manifest.generator !== fp.generator.sha256 || manifest.version !== fp.generator.version) reasons.push('generator changed')
+  if (!reasons.length) reasons.push('fingerprint differs')
+  return { stale: true, missing: false, reasons }
+}
 
 function manifestJson(fp, counts) {
   return `${JSON.stringify({
@@ -114,7 +148,7 @@ export function build(config, { ifStale = false } = {}) {
     throw new CairnError(
       `size targets exceeded; the vault was not replaced (${planned.over.length} file${planned.over.length > 1 ? 's' : ''})`,
       1,
-      [...describeOver(planned.over), 'Reduce card.fields, card.maxFieldChars, card.maxHeadings, or k, or raise the target in the config.'],
+      [...describeOver(planned.over), `Actual sizes: ${describeSizes(sizeReport(config, planned.files))}.`, 'Reduce card.fields, card.maxFieldChars, card.maxHeadings, or k, or raise the target in the config.'],
     )
   }
   const parent = path.dirname(out)
@@ -154,7 +188,7 @@ export function build(config, { ifStale = false } = {}) {
   } finally {
     fs.rmSync(lock, { recursive: true, force: true })
   }
-  return { action: 'built', counts: planned.counts, warnings: planned.warnings, fingerprint: fp.fingerprint }
+  return { action: 'built', counts: planned.counts, warnings: planned.warnings, fingerprint: fp.fingerprint, sizes: sizeReport(config, planned.files) }
 }
 
 /** Read-only verification. Returns { ok, passed: string[], problems: string[], stale: boolean, warnings: string[] }. */
@@ -168,13 +202,10 @@ export function check(config) {
   if (manifest.format !== FORMAT) problems.push(`vault format ${manifest.format} differs from this generator's format ${FORMAT}; rebuild`)
 
   const fp = fingerprint(config)
-  const stale = manifest.fingerprint !== fp.fingerprint
+  const { stale, reasons } = staleness(config, fp)
   if (stale) {
-    const why = []
-    if (manifest.inputs !== fp.inputs) why.push('source files changed')
-    if (manifest.config !== fp.config) why.push('config changed')
-    if (manifest.generator !== fp.generator.sha256 || manifest.version !== fp.generator.version) why.push('generator changed')
-    problems.push(`stale: ${why.join(', ') || 'fingerprint differs'} since the last build (run cairn build)`)
+    const hint = reasons.includes('config changed') ? '; every config change, including wayfinding settings, needs a rebuild before guide and check' : ''
+    problems.push(`stale: ${reasons.join(', ')} since the last build (run cairn build${hint})`)
   } else {
     passed.push(`fingerprint matches the inputs (${fp.files} source files)`)
   }
@@ -196,8 +227,9 @@ export function check(config) {
   // Size targets, measured on disk.
   const diskFiles = new Map([...onDisk].filter((rel) => rel.endsWith('.md')).map((rel) => [rel, fs.readFileSync(path.join(out, ...rel.split('/')), 'utf8')]))
   const over = oversized(config, diskFiles)
-  if (over.length) problems.push(...describeOver(over))
-  else passed.push(`size targets met (card ≤ ${kb(config.card.maxBytes)}, CATALOG ≤ ${kb(config.catalog.maxBytes)}, INDEX ≤ ${kb(config.index.maxBytes)})`)
+  const sizes = describeSizes(sizeReport(config, diskFiles))
+  if (over.length) problems.push(...describeOver(over), `actual sizes: ${sizes}`)
+  else passed.push(`size targets met: ${sizes}`)
 
   const nodes = planned.counts.nodes
   const cards = [...onDisk].filter((rel) => rel.startsWith('cards/')).length
@@ -208,6 +240,17 @@ export function check(config) {
     const rows = catalog.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| id |')).length
     if (rows !== nodes) problems.push(`CATALOG.md has ${rows} rows for ${nodes} nodes`)
     else passed.push(`CATALOG.md rows = ${nodes} nodes`)
+  }
+
+  // The configured instruction file carries the current block.
+  if (config.instructionPath) {
+    const shown = config.wayfinding.instructionFile
+    const text = fs.existsSync(config.instructionPath) ? fs.readFileSync(config.instructionPath, 'utf8') : null
+    const block = renderWayfinding(config).replace(/\n+$/, '')
+    if (text === null) problems.push(`instruction file not found: ${shown} (run cairn guide --write ${shown})`)
+    else if (!text.includes(START_MARKER) || !text.includes(END_MARKER)) problems.push(`${shown} has no wayfinding block (run cairn guide --write ${shown})`)
+    else if (!text.includes(block)) problems.push(`${shown} carries an outdated wayfinding block (run cairn guide --write ${shown})`)
+    else passed.push(`${shown} carries the current wayfinding block`)
   }
   return { ok: problems.length === 0, passed, problems, stale, warnings: planned.warnings }
 }

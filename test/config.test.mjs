@@ -64,9 +64,15 @@ test('resolveConfig fails on a missing folder and on output overlapping the sour
   const dir = tempDir(t)
   assert.throws(() => resolveConfig({ source: { dir: 'nope' } }, dir), (e) => e instanceof CairnError && e.exitCode === 2 && e.details.some((d) => d.startsWith('source.dir: folder not found')))
   fs.mkdirSync(path.join(dir, 'kb'))
-  assert.throws(() => resolveConfig({ source: { dir: 'kb' }, output: 'kb/vault' }, dir), (e) => e.details.some((d) => d.startsWith('output: "kb/vault" overlaps')))
+  // The output may not be source.dir itself or contain it; the message suggests the fixes.
+  for (const output of ['kb', '.']) {
+    assert.throws(() => resolveConfig({ source: { dir: 'kb' }, output }, dir), (e) => e.details.some((d) => d.startsWith(`output: "${output}" `) && d.includes('"../cairn-vault"') && d.includes('subfolder of the notes')))
+  }
+  // A subfolder of the notes is allowed (Cairn leaves its own output out of the inputs), also when the notes are the config folder.
+  assert.equal(resolveConfig({ source: { dir: 'kb' }, output: 'kb/vault' }, dir).outDir, path.join(dir, 'kb', 'vault'))
+  assert.equal(resolveConfig({ source: { dir: '.' } }, path.join(dir, 'kb')).outDir, path.join(dir, 'kb', 'cairn-vault'))
   const ok = resolveConfig({ source: { dir: 'kb' } }, dir)
-  assert.equal(ok.wayfinding.vaultPath, 'cairn-vault')
+  assert.equal(ok.wayfinding.vaultPath, null, 'computed relative to the instruction file when the block is rendered')
 })
 
 test('loadConfig reports unreadable files and invalid JSON with exit code 2', (t) => {
@@ -74,4 +80,17 @@ test('loadConfig reports unreadable files and invalid JSON with exit code 2', (t
   assert.throws(() => loadConfig(path.join(dir, 'missing.json')), (e) => e.exitCode === 2 && /cannot read config/.test(e.message))
   fs.writeFileSync(path.join(dir, 'bad.json'), '{ "source": ')
   assert.throws(() => loadConfig(path.join(dir, 'bad.json')), (e) => e.exitCode === 2 && /not valid JSON/.test(e.message))
+})
+
+test('$comment, kindField, instructionFile, and an omitted hubThreshold are accepted', (t) => {
+  const { config, errors } = validateConfig({ $comment: ['why'], source: { dir: 'kb' }, kindField: 'kind', edges: ['e'], sharedNeighbors: { via: 'e' }, wayfinding: { instructionFile: 'AGENTS.md' } })
+  assert.deepEqual(errors, [])
+  assert.equal(config.kindField, 'kind')
+  assert.equal(config.sharedNeighbors.hubThreshold, null, 'automatic')
+  assert.equal(config.wayfinding.instructionFile, 'AGENTS.md')
+  assert.ok(errorsOf({ source: { dir: 'kb' }, $comment: 3 }).some((e) => e.startsWith('$comment:')))
+  assert.ok(errorsOf({ source: { dir: 'kb' }, edges: ['e'], kindField: 'e' }).some((e) => e.startsWith('kindField: "e" is an edge field')))
+  const dir = tempDir(t)
+  fs.mkdirSync(path.join(dir, 'kb'))
+  assert.throws(() => resolveConfig({ source: { dir: 'kb' }, wayfinding: { instructionFile: 'cairn-vault/AGENTS.md' } }, dir), (e) => e.details.some((d) => d.startsWith('wayfinding.instructionFile: "cairn-vault/AGENTS.md" is inside the output folder')))
 })

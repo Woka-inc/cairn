@@ -30,5 +30,4 @@ Shorten the edit-run loop while building a pipeline.
 - Design docs: DD-005 (Configuration and command surface); DD-008 (Telemetry conventions)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-cli (Command-line runner)
-- Cited by (reverse of Design docs): none
 - Shares design docs with (two hops via Design docs): qs-cli (Command-line runner) ×1; qs-config (Configuration loader) ×1; qs-io-s3 (Object storage adapter) ×1; qs-logging (Structured logging) ×1; qs-metrics (Metrics exporter) ×1; qs-plugin-sdk (Plugin SDK) ×1 (6 of 8 shown — capped at k=6)

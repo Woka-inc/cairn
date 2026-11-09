@@ -30,5 +30,4 @@ Ingest event logs without a separate parsing step.
 - Design docs: DD-006 (Adapter contract)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-io-csv (CSV reader and writer)
-- Cited by (reverse of Design docs): none
-- Shares design docs with (two hops via Design docs): qs-io-arrow (Arrow bridge) ×1; qs-io-base (I/O adapter base) ×1; qs-io-csv (CSV reader and writer) ×1; qs-io-http (HTTP source) ×1; qs-io-parquet (Parquet adapter) ×1; qs-io-s3 (Object storage adapter) ×1 (6 of 7 shown — capped at k=6)
+- Shares design docs with (two hops via Design docs): none shown (0 of 7 shown — 1 hub skipped: design_docs targets used by ≥7 nodes)

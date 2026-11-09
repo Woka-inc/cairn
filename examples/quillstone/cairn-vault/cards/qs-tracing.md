@@ -30,5 +30,4 @@ Follow one batch through the whole pipeline.
 - Design docs: DD-008 (Telemetry conventions)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-logging (Structured logging); qs-metrics (Metrics exporter)
-- Cited by (reverse of Design docs): none
 - Shares design docs with (two hops via Design docs): qs-devserver (Development server) ×1; qs-io-s3 (Object storage adapter) ×1; qs-logging (Structured logging) ×1; qs-metrics (Metrics exporter) ×1

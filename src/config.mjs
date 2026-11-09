@@ -16,7 +16,7 @@ export const DEFAULT_GENERAL_RULES = Object.freeze([
 export const DEFAULT_RULES = Object.freeze({
   topical: 'Topical lookup (nodes whose content matches a topic): {search}. Open the best-matching cards; if there are no hits, search the full texts in `{vault}/bodies/`.',
   attribute: 'Attribute filter (select nodes by {attributes}): read `{vault}/CATALOG.md`, one row per node, instead of opening cards one by one.',
-  relation: 'Relation lookup ({edges}): open `{vault}/cards/<id>.md` and read its Relations section{expanded}. "none" means no such neighbor exists. A list is truncated only when it ends with "(K of N shown — reason)"; only then find the rest in the edge columns of `{vault}/CATALOG.md`, otherwise do not search further.',
+  relation: 'Relation lookup ({edges}): open `{vault}/cards/<id>.md` and read its Relations section{expanded}. "none" means no such neighbor exists.{omitted} A list is truncated only when it ends with "(K of N shown — reason)"; only then find the rest in the edge columns of `{vault}/CATALOG.md`, otherwise do not search further.',
   composition: 'Multi-node composition (several nodes that together cover several topics): run one search per topic, then combine and order the candidates with the columns of `{vault}/CATALOG.md`.',
 })
 
@@ -24,9 +24,15 @@ export const DEFAULT_SEARCH = 'search the cards in `{vault}/cards/` for the topi
 
 const RULE_KEYS = ['topical', 'attribute', 'relation', 'composition']
 
+/** Share of the nodes that use the sharedNeighbors.via edge at which an intermediate counts as a hub (when hubThreshold is not set). */
+export const HUB_SHARE = 0.25
+export const HUB_MIN = 3
+/** The automatic hub threshold for `users` nodes that use the via edge: max(3, ceil(25% of users)). */
+export const autoHubThreshold = (users) => Math.max(HUB_MIN, Math.ceil(users * HUB_SHARE))
+
 /** Allowed keys per object, used to reject typos. */
 const SHAPE = {
-  root: ['$schema', 'source', 'idField', 'titleField', 'descriptionField', 'attributes', 'edges', 'sharedNeighbors', 'k', 'card', 'catalog', 'index', 'bodies', 'output', 'wayfinding'],
+  root: ['$schema', '$comment', 'source', 'idField', 'titleField', 'descriptionField', 'kindField', 'attributes', 'edges', 'sharedNeighbors', 'k', 'card', 'catalog', 'index', 'bodies', 'output', 'wayfinding'],
   source: ['dir', 'include', 'exclude'],
   edge: ['field', 'label', 'reverse', 'external'],
   sharedNeighbors: ['via', 'label', 'hubThreshold'],
@@ -34,7 +40,7 @@ const SHAPE = {
   cardField: ['field', 'label'],
   catalog: ['maxBytes', 'edgeColumns'],
   index: ['maxBytes'],
-  wayfinding: ['vaultPath', 'search', 'rules', 'general', 'extraRules'],
+  wayfinding: ['instructionFile', 'vaultPath', 'search', 'rules', 'general', 'extraRules'],
   rules: RULE_KEYS,
 }
 
@@ -93,6 +99,9 @@ export function validateConfig(raw) {
 
   if (!isObject(raw)) return { config: null, errors: ['config: must be a JSON object'] }
   checkKeys(raw, 'root', 'config')
+  if (raw.$comment !== undefined && typeof raw.$comment !== 'string' && !(Array.isArray(raw.$comment) && raw.$comment.every((c) => typeof c === 'string'))) {
+    err('$comment', 'must be a string or an array of strings (it is ignored by Cairn)')
+  }
 
   // source
   const source = { dir: null, include: ['**/*.md'], exclude: [] }
@@ -118,6 +127,7 @@ export function validateConfig(raw) {
   const idField = strField('idField', 'id')
   const titleField = strField('titleField', 'title')
   const descriptionField = strField('descriptionField', null, { optional: true })
+  const kindField = strField('kindField', null, { optional: true })
 
   const attributes = stringList(raw.attributes, 'attributes') ?? []
   if (new Set(attributes).size !== attributes.length) err('attributes', 'must not repeat a field')
@@ -151,13 +161,14 @@ export function validateConfig(raw) {
   if (dup) err('edges', `field "${dup}" is defined twice`)
   for (const f of edgeFields) if (attributes.includes(f)) err('edges', `field "${f}" is also listed in attributes; use it as one or the other`)
   for (const f of edgeFields) if (f === idField) err('edges', `field "${f}" is the id field`)
+  if (kindField && edgeFields.includes(kindField)) err('kindField', `"${kindField}" is an edge field; name the field that holds the node's kind (for example "kind" or "type")`)
 
   // shared neighbors
   let sharedNeighbors = null
   if (raw.sharedNeighbors !== undefined && raw.sharedNeighbors !== null) {
     const s = raw.sharedNeighbors
     if (!isObject(s)) {
-      err('sharedNeighbors', 'must be an object { "via": "<edge field>", "hubThreshold": 9 }')
+      err('sharedNeighbors', 'must be an object { "via": "<edge field>" } (optionally with "label" and "hubThreshold")')
     } else {
       checkKeys(s, 'sharedNeighbors', 'sharedNeighbors')
       if (typeof s.via !== 'string' || !s.via.trim()) err('sharedNeighbors.via', 'is required: the edge field whose targets are shared intermediates (e.g. "evidence", "cites", "dataset")')
@@ -167,7 +178,8 @@ export function validateConfig(raw) {
       sharedNeighbors = {
         via: s.via,
         label: typeof s.label === 'string' && s.label.trim() ? s.label : `Shares ${viaEdge ? viaEdge.label.toLowerCase() : s.via} with`,
-        hubThreshold: posInt(s.hubThreshold, 'sharedNeighbors.hubThreshold', 9, 2),
+        // null: automatic, max(3, ceil(25% of the nodes that use the via edge)); computed at build time.
+        hubThreshold: s.hubThreshold === null ? null : posInt(s.hubThreshold, 'sharedNeighbors.hubThreshold', null, 2),
       }
     }
   }
@@ -245,12 +257,16 @@ export function validateConfig(raw) {
   }
 
   // wayfinding
-  const wayfinding = { vaultPath: null, search: DEFAULT_SEARCH, rules: { ...DEFAULT_RULES }, general: [...DEFAULT_GENERAL_RULES], extraRules: [] }
+  const wayfinding = { instructionFile: null, vaultPath: null, search: DEFAULT_SEARCH, rules: { ...DEFAULT_RULES }, general: [...DEFAULT_GENERAL_RULES], extraRules: [] }
   if (raw.wayfinding !== undefined) {
     const w = raw.wayfinding
     if (!isObject(w)) err('wayfinding', 'must be an object')
     else {
       checkKeys(w, 'wayfinding', 'wayfinding')
+      if (w.instructionFile !== undefined && w.instructionFile !== null) {
+        if (typeof w.instructionFile !== 'string' || !w.instructionFile.trim()) err('wayfinding.instructionFile', 'must be a non-empty path to CLAUDE.md, AGENTS.md, or a skill file (relative to the config file)')
+        else wayfinding.instructionFile = w.instructionFile
+      }
       if (w.vaultPath !== undefined) {
         if (typeof w.vaultPath !== 'string' || !w.vaultPath.trim()) err('wayfinding.vaultPath', 'must be a non-empty string')
         else wayfinding.vaultPath = w.vaultPath.replace(/\/+$/, '')
@@ -275,7 +291,7 @@ export function validateConfig(raw) {
     }
   }
 
-  const config = { source, idField, titleField, descriptionField, attributes, edges, sharedNeighbors, k, card, catalog, index, bodies, output, wayfinding }
+  const config = { source, idField, titleField, descriptionField, kindField, attributes, edges, sharedNeighbors, k, card, catalog, index, bodies, output, wayfinding }
   return { config, errors }
 }
 
@@ -306,15 +322,21 @@ export function resolveConfig(raw, baseDir, { file = null, requireSource = true 
     if (requireSource && (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory())) {
       errors.push(`source.dir: folder not found: ${config.source.dir} (relative to the config file)`)
     }
-    if (isInside(outDir, sourceDir) || isInside(sourceDir, outDir)) {
-      errors.push(`output: "${config.output}" overlaps source.dir "${config.source.dir}"; choose a folder outside the knowledge base`)
+    // The output may sit inside source.dir (Cairn leaves its own output out of the inputs), but it must not
+    // be source.dir itself or contain it, because a rebuild replaces the whole output folder.
+    if (isInside(sourceDir, outDir)) {
+      const same = path.relative(sourceDir, outDir) === ''
+      errors.push(`output: "${config.output}" ${same ? 'is the same folder as' : 'contains'} source.dir "${config.source.dir}", and a build replaces the whole output folder. `
+        + 'Use a folder next to the notes (for example "../cairn-vault", or move the config one level up and use "cairn-vault"), '
+        + 'or a subfolder of the notes such as "cairn-vault" (Cairn leaves its own output out of the inputs)')
     }
     config.baseDir = baseDir
     config.file = file
     config.sourceDir = sourceDir
     config.outDir = outDir
-    if (!config.wayfinding.vaultPath) {
-      config.wayfinding.vaultPath = path.relative(baseDir, outDir).split(path.sep).join('/') || '.'
+    config.instructionPath = config.wayfinding.instructionFile ? path.resolve(baseDir, config.wayfinding.instructionFile) : null
+    if (config.instructionPath && isInside(config.instructionPath, outDir)) {
+      errors.push(`wayfinding.instructionFile: "${config.wayfinding.instructionFile}" is inside the output folder, which every build replaces; choose a file outside "${config.output}"`)
     }
   }
   if (errors.length) {
@@ -325,6 +347,6 @@ export function resolveConfig(raw, baseDir, { file = null, requireSource = true 
 
 /** Canonical JSON of the parts of a config that affect output (for the fingerprint). */
 export function configDigestInput(config) {
-  const { baseDir, file, sourceDir, outDir, ...rest } = config
+  const { baseDir, file, sourceDir, outDir, instructionPath, ...rest } = config
   return JSON.stringify(rest)
 }

@@ -30,5 +30,4 @@ Let others extend Quillstone without forking it.
 - Design docs: DD-001 (Error model); DD-005 (Configuration and command surface)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-testkit (Test kit)
-- Cited by (reverse of Design docs): none
-- Shares design docs with (two hops via Design docs): qs-cli (Command-line runner) ×1; qs-config (Configuration loader) ×1; qs-devserver (Development server) ×1; qs-testkit (Test kit) ×1 (4 of 14 shown — 1 hub skipped: design_docs targets used by ≥10 nodes)
+- Shares design docs with (two hops via Design docs): qs-cli (Command-line runner) ×1; qs-config (Configuration loader) ×1; qs-devserver (Development server) ×1; qs-testkit (Test kit) ×1 (4 of 14 shown — 1 hub skipped: design_docs targets used by ≥7 nodes)

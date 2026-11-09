@@ -30,5 +30,4 @@ Run any pipeline file the same way on a laptop and in production.
 - Design docs: DD-005 (Configuration and command surface)
 - Used by (reverse of Depends on): qs-devserver (Development server); qs-examples (Example pipelines)
 - Related from (reverse of Related): qs-config (Configuration loader); qs-devserver (Development server)
-- Cited by (reverse of Design docs): none
 - Shares design docs with (two hops via Design docs): qs-config (Configuration loader) ×1; qs-devserver (Development server) ×1; qs-plugin-sdk (Plugin SDK) ×1; qs-testkit (Test kit) ×1

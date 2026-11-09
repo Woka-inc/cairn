@@ -30,5 +30,4 @@ Turn a paginated API into a stream of batches.
 - Design docs: DD-006 (Adapter contract); DD-003 (Retry policy and idempotence)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-io-s3 (Object storage adapter)
-- Cited by (reverse of Design docs): none
-- Shares design docs with (two hops via Design docs): qs-io-s3 (Object storage adapter) ×2; qs-io-arrow (Arrow bridge) ×1; qs-io-base (I/O adapter base) ×1; qs-io-csv (CSV reader and writer) ×1; qs-io-json (JSON Lines reader) ×1; qs-io-parquet (Parquet adapter) ×1 (6 of 8 shown — capped at k=6)
+- Shares design docs with (two hops via Design docs): qs-io-s3 (Object storage adapter) ×1; qs-scheduler (Stage scheduler) ×1 (2 of 8 shown — 1 hub skipped: design_docs targets used by ≥7 nodes)

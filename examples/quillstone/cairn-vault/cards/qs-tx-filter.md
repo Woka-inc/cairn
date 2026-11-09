@@ -30,5 +30,4 @@ Drop rows early and still know how many were dropped.
 - Design docs: DD-002 (Row representation)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-tx-map (Row mapping); qs-validate (Validation rules)
-- Cited by (reverse of Design docs): none
 - Shares design docs with (two hops via Design docs): qs-core (Core runtime) ×1; qs-dedupe (Deduplication) ×1; qs-tx-join (Joins) ×1; qs-tx-map (Row mapping) ×1; qs-tx-window (Windowed aggregation) ×1

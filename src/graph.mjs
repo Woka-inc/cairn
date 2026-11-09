@@ -2,11 +2,14 @@
 // (reverse edges by type and two-hop shared-intermediate neighbors with hub exclusion and a top-k cap).
 import fs from 'node:fs'
 import path from 'node:path'
-import { FILENAME_ID } from './config.mjs'
+import { FILENAME_ID, autoHubThreshold } from './config.mjs'
 import { FrontMatterError, readFrontMatter } from './frontmatter.mjs'
 import { CairnError, globToRegExp, isInside, naturalCompare, oneLine, walkFiles } from './util.mjs'
 
-/** Source files selected by include/exclude globs, as sorted relative paths. */
+/**
+ * Source files selected by include/exclude globs, as sorted relative paths.
+ * Cairn's own output and the configured instruction file (wayfinding.instructionFile) are never inputs.
+ */
 export function listSourceFiles(config) {
   const include = config.source.include.map(globToRegExp)
   const exclude = config.source.exclude.map(globToRegExp)
@@ -14,9 +17,17 @@ export function listSourceFiles(config) {
   return walkFiles(config.sourceDir).filter((rel) => {
     if (!include.some((re) => re.test(rel))) return false
     if (exclude.some((re) => re.test(rel))) return false
-    if (outRel && !outRel.startsWith('..') && isInside(path.join(config.sourceDir, rel), config.outDir)) return false
+    const full = path.join(config.sourceDir, ...rel.split('/'))
+    if (outRel && !outRel.startsWith('..') && isInside(full, config.outDir)) return false
+    if (config.instructionPath && path.relative(config.instructionPath, full) === '') return false
     return true
   })
+}
+
+/** The node id of a parsed source file, or '' when the file is not a node (no id field). */
+export function nodeIdOf(config, rel, data) {
+  if (config.idField === FILENAME_ID) return path.posix.basename(rel).replace(/\.[^.]+$/, '')
+  return oneLine(Array.isArray(data[config.idField]) ? '' : data[config.idField])
 }
 
 export const asList = (value) => {
@@ -59,9 +70,7 @@ export function loadNodes(config) {
       throw error
     }
     const { data, body } = parsed
-    let id
-    if (config.idField === FILENAME_ID) id = path.posix.basename(rel).replace(/\.[^.]+$/, '')
-    else id = oneLine(Array.isArray(data[config.idField]) ? '' : data[config.idField])
+    const id = nodeIdOf(config, rel, data)
     if (!id) { skipped.push(rel); continue }
     const title = oneLine(typeof data[config.titleField] === 'string' ? data[config.titleField] : '') || id
     const description = config.descriptionField ? oneLine(typeof data[config.descriptionField] === 'string' ? data[config.descriptionField] : '') : ''
@@ -80,17 +89,18 @@ export function loadNodes(config) {
   nodes.sort((a, b) => naturalCompare(a.id, b.id))
   const warnings = []
   if (skipped.length) {
-    warnings.push(`${skipped.length} file(s) skipped because they have no "${config.idField}" field: ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ', …' : ''}`)
+    warnings.push(`${skipped.length} file(s) skipped because they have no "${config.idField}" field (they are not nodes and do not affect the fingerprint; add them to source.exclude to silence this): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ', …' : ''}`)
   }
   return { nodes, skipped, warnings, fileCount: files.length }
 }
 
 /**
  * Build the expanded graph.
- * Returns { byId, forward, reverse, shared(id), usersOf, dangling, warnings }.
+ * Returns { byId, forward, reverse, shared(id), usersOf, hub, dangling, warnings }.
  *  forward[field]: Map<id, string[]>  outgoing targets in author order (deduplicated)
  *  reverse[field]: Map<id, string[]>  incoming sources, naturally sorted
  *  shared(id): { ranked: [[id, count]], total, hubs, shown, truncated, reason }
+ *  hub: { threshold, auto, users } — users = nodes with at least one sharedNeighbors.via target
  */
 export function buildGraph(config, nodes) {
   const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -123,13 +133,19 @@ export function buildGraph(config, nodes) {
 
   const sn = config.sharedNeighbors
   const usersOf = new Map()
+  let hub = null
   if (sn) {
+    let users = 0
     for (const node of nodes) {
-      for (const x of forward[sn.via].get(node.id)) {
+      const targets = forward[sn.via].get(node.id)
+      if (targets.length) users += 1
+      for (const x of targets) {
         if (!usersOf.has(x)) usersOf.set(x, [])
         usersOf.get(x).push(node.id)
       }
     }
+    const auto = sn.hubThreshold == null
+    hub = { threshold: auto ? autoHubThreshold(users) : sn.hubThreshold, auto, users }
   }
   const sharedCache = new Map()
   const shared = (id) => {
@@ -141,7 +157,7 @@ export function buildGraph(config, nodes) {
     for (const x of forward[sn.via].get(id) ?? []) {
       const users = usersOf.get(x) ?? []
       for (const u of users) if (u !== id) everyone.add(u)
-      if (users.length >= sn.hubThreshold) { hubs += 1; continue }
+      if (users.length >= hub.threshold) { hubs += 1; continue }
       for (const u of users) if (u !== id) counts.set(u, (counts.get(u) ?? 0) + 1)
     }
     const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || naturalCompare(a[0], b[0]))
@@ -155,5 +171,5 @@ export function buildGraph(config, nodes) {
   if (dangling.length) {
     warnings.push(`${dangling.length} edge(s) point to unknown ids and were left out (mark the edge "external": true if its targets are not nodes): ${dangling.slice(0, 5).join(', ')}${dangling.length > 5 ? ', …' : ''}`)
   }
-  return { byId, forward, reverse, shared, usersOf, dangling, warnings }
+  return { byId, forward, reverse, shared, usersOf, hub, dangling, warnings }
 }

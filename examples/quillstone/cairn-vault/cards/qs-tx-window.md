@@ -30,5 +30,4 @@ Aggregate unbounded streams by time without unbounded state.
 - Design docs: DD-002 (Row representation); DD-007 (Columnar interop)
 - Used by (reverse of Depends on): qs-dedupe (Deduplication)
 - Related from (reverse of Related): qs-tx-join (Joins)
-- Cited by (reverse of Design docs): none
 - Shares design docs with (two hops via Design docs): qs-dedupe (Deduplication) ×2; qs-tx-join (Joins) ×2; qs-core (Core runtime) ×1; qs-io-arrow (Arrow bridge) ×1; qs-tx-filter (Filtering) ×1; qs-tx-map (Row mapping) ×1

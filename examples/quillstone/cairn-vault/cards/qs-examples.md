@@ -30,5 +30,4 @@ Give new users something that runs in one command.
 - Design docs: none
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): none
-- Cited by (reverse of Design docs): none
 - Shares design docs with (two hops via Design docs): none

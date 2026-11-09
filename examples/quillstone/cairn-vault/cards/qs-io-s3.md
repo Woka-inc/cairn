@@ -30,5 +30,4 @@ Move large files to and from object storage reliably.
 - Design docs: DD-006 (Adapter contract); DD-003 (Retry policy and idempotence); DD-008 (Telemetry conventions)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-io-http (HTTP source)
-- Cited by (reverse of Design docs): none
-- Shares design docs with (two hops via Design docs): qs-io-http (HTTP source) ×2; qs-devserver (Development server) ×1; qs-io-arrow (Arrow bridge) ×1; qs-io-base (I/O adapter base) ×1; qs-io-csv (CSV reader and writer) ×1; qs-io-json (JSON Lines reader) ×1 (6 of 12 shown — capped at k=6)
+- Shares design docs with (two hops via Design docs): qs-devserver (Development server) ×1; qs-io-http (HTTP source) ×1; qs-logging (Structured logging) ×1; qs-metrics (Metrics exporter) ×1; qs-scheduler (Stage scheduler) ×1; qs-tracing (Tracing) ×1 (6 of 12 shown — 1 hub skipped: design_docs targets used by ≥7 nodes)

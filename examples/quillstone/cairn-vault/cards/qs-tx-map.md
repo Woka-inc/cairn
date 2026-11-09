@@ -30,5 +30,4 @@ Make the most common transform safe and fast.
 - Design docs: DD-001 (Error model); DD-002 (Row representation)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): qs-tx-filter (Filtering)
-- Cited by (reverse of Design docs): none
-- Shares design docs with (two hops via Design docs): qs-core (Core runtime) ×1; qs-dedupe (Deduplication) ×1; qs-tx-filter (Filtering) ×1; qs-tx-join (Joins) ×1; qs-tx-window (Windowed aggregation) ×1 (5 of 14 shown — 1 hub skipped: design_docs targets used by ≥10 nodes)
+- Shares design docs with (two hops via Design docs): qs-core (Core runtime) ×1; qs-dedupe (Deduplication) ×1; qs-tx-filter (Filtering) ×1; qs-tx-join (Joins) ×1; qs-tx-window (Windowed aggregation) ×1 (5 of 14 shown — 1 hub skipped: design_docs targets used by ≥7 nodes)

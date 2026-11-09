@@ -17,9 +17,22 @@ function fill(template, values) {
   return template.replace(/\{(\w+)\}/g, (m, key) => (Object.prototype.hasOwnProperty.call(values, key) ? values[key] : m))
 }
 
-/** The placeholder values that rule templates may use. */
-export function templateValues(config) {
-  const vault = config.wayfinding.vaultPath
+/**
+ * The folder that paths in the block are written relative to: the folder of the instruction file the block
+ * is written into (`file`), else of wayfinding.instructionFile, else the folder that holds the config.
+ */
+export function blockBase(config, file = null) {
+  if (file) return path.dirname(path.resolve(file))
+  if (config.instructionPath) return path.dirname(config.instructionPath)
+  return config.baseDir ?? null
+}
+
+const relPath = (from, to) => path.relative(from, to).split(path.sep).join('/') || '.'
+
+/** The placeholder values that rule templates may use. Paths are relative to the instruction file (see blockBase). */
+export function templateValues(config, { file = null } = {}) {
+  const from = blockBase(config, file)
+  const vault = config.wayfinding.vaultPath ?? (from && config.outDir ? relPath(from, config.outDir) : config.output)
   const reverseLabels = config.edges.filter((e) => e.reverse).map((e) => e.reverse)
   const parts = []
   if (reverseLabels.length) parts.push(`reverse edges (${reverseLabels.join('; ')})`)
@@ -27,19 +40,23 @@ export function templateValues(config) {
   const base = { vault }
   const values = {
     vault,
-    source: config.sourceDir && config.baseDir ? path.relative(config.baseDir, config.sourceDir).split(path.sep).join('/') : config.source.dir,
+    source: from && config.sourceDir ? relPath(from, config.sourceDir) : config.source.dir,
     attributes: config.attributes.length ? config.attributes.join(', ') : 'attribute values',
     edges: config.edges.length ? config.edges.map((e) => e.label.toLowerCase()).join(', ') : 'links between nodes',
     expanded: parts.length ? `, which also lists ${parts.join(' and ')}` : '',
+    omitted: config.kindField ? ` Rows for relations that no node of the same ${config.kindField} has are left out.` : '',
     search: fill(config.wayfinding.search, base),
   }
   values.Search = values.search ? values.search[0].toUpperCase() + values.search.slice(1) : ''
   return values
 }
 
-/** The wayfinding block, markers included. Deterministic; no timestamps. */
-export function renderWayfinding(config) {
-  const v = templateValues(config)
+/**
+ * The wayfinding block, markers included. Deterministic; no timestamps.
+ * `file` is the instruction file the block is meant for; paths in the block are relative to its folder.
+ */
+export function renderWayfinding(config, { file = null } = {}) {
+  const v = templateValues(config, { file })
   const lines = [
     START_MARKER,
     '## Knowledge-base lookup (Cairn)',

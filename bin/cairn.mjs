@@ -3,11 +3,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
-import { build, check } from '../src/build.mjs'
+import { build, check, staleness } from '../src/build.mjs'
 import { loadConfig } from '../src/config.mjs'
+import { FrontMatterError, readFrontMatter } from '../src/frontmatter.mjs'
+import { listSourceFiles, nodeIdOf } from '../src/graph.mjs'
 import { insertBlock, renderWayfinding } from '../src/guide.mjs'
 import { proposeConfig } from '../src/init.mjs'
-import { CairnError } from '../src/util.mjs'
+import { describeSizes } from '../src/render.mjs'
+import { CairnError, isInside } from '../src/util.mjs'
 
 const HELP = `cairn: compact cards and wayfinding for a linked Markdown knowledge base
 
@@ -17,12 +20,16 @@ Usage:
       checked before the previous vault is replaced. --if-stale skips the build when the
       input fingerprint is unchanged.
   cairn check [--config cairn.config.json]
-      Read-only: config valid, fingerprint current, files equal a fresh build, size targets met.
+      Read-only: config valid, fingerprint current, files equal a fresh build, size targets met,
+      and wayfinding.instructionFile (if set) carries the current block.
   cairn guide [--config cairn.config.json] [--write FILE]
       Print the wayfinding block, or insert/replace it between markers in FILE
-      (CLAUDE.md, AGENTS.md, or a skill file).
+      (CLAUDE.md, AGENTS.md, or a skill file). Paths in the block are relative to FILE.
+      Rebuild first after any config change; guide warns when the vault is stale.
   cairn init <kb-folder> [--config cairn.config.json] [--write] [--force]
-      Scan the folder and propose a config (best effort). Prints it unless --write.
+      Scan the folder and propose a config (best effort). --config names the config file the
+      proposal is for: source.dir is written relative to its folder, and --write saves it there.
+      Without --write the JSON goes to stdout and the report to stderr.
   cairn watch [--config cairn.config.json]
       Rebuild when files in source.dir or the config change (Ctrl-C to stop).
 
@@ -56,7 +63,10 @@ function runBuild(values) {
   for (const w of res.warnings) errOut(`warning: ${w}`)
   if (!values.quiet) {
     if (res.action === 'fresh') out(`cairn: vault is up to date (${config.output})`)
-    else out(`cairn: built ${config.output} in ${Date.now() - started} ms: ${res.counts.cards} cards, ${res.counts.catalogRows} catalog rows, ${res.counts.bodies} bodies`)
+    else {
+      out(`cairn: built ${config.output} in ${Date.now() - started} ms: ${res.counts.cards} cards, ${res.counts.catalogRows} catalog rows, ${res.counts.bodies} bodies`)
+      out(`cairn: sizes: ${describeSizes(res.sizes)}`)
+    }
   }
   return 0
 }
@@ -71,18 +81,46 @@ function runCheck(values) {
   return res.ok ? 0 : 1
 }
 
+/** Refuse to write the block into a note: a file inside source.dir that is a node (has an id). */
+function assertNotNode(config, file) {
+  if (!isInside(file, config.sourceDir)) return
+  const rel = path.relative(config.sourceDir, file).split(path.sep).join('/')
+  if (!listSourceFiles(config).includes(rel) || !fs.existsSync(file)) return
+  let data
+  try {
+    ({ data } = readFrontMatter(fs.readFileSync(file, 'utf8')))
+  } catch (error) {
+    if (error instanceof FrontMatterError) return
+    throw error
+  }
+  if (nodeIdOf(config, rel, data)) {
+    throw new CairnError(`${display(file)} is a node of the knowledge base (it has an id); write the block into an instruction file that is not a note`, 1)
+  }
+}
+
+const display = (file) => path.relative(process.cwd(), file) || file
+
 function runGuide(values) {
   const config = loadConfig(values.config)
-  const block = renderWayfinding(config)
   if (!values.write) {
-    process.stdout.write(block)
+    process.stdout.write(renderWayfinding(config))
     return 0
   }
   const file = path.resolve(values.write)
+  assertNotNode(config, file)
+  const block = renderWayfinding(config, { file })
   const before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
   const { text, action } = insertBlock(before, block)
   if (action !== 'unchanged') fs.writeFileSync(file, text)
-  if (!values.quiet) out(`cairn: wayfinding block ${action} in ${path.relative(process.cwd(), file) || file}`)
+  if (!values.quiet) out(`cairn: wayfinding block ${action} in ${display(file)}`)
+  const st = staleness(config)
+  if (st.stale) {
+    errOut(`warning: the vault is stale (${st.reasons.join(', ')}); the block above matches the current config, but the vault does not yet. Run: cairn build --config ${values.config}, then cairn check --config ${values.config}`)
+  }
+  if (block !== renderWayfinding(config)) {
+    const where = config.wayfinding.instructionFile ? `wayfinding.instructionFile ("${config.wayfinding.instructionFile}")` : 'the config folder'
+    errOut(`note: paths in the block are relative to ${display(file)}, while ${config.output}/WAYFINDING.md is written relative to ${where}. Set wayfinding.instructionFile to this file and rebuild so that both match and check verifies the block.`)
+  }
   return 0
 }
 

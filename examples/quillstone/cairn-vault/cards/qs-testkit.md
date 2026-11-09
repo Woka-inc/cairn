@@ -30,5 +30,4 @@ Test pipelines without files, networks, or clocks.
 - Design docs: DD-005 (Configuration and command surface)
 - Used by (reverse of Depends on): none
 - Related from (reverse of Related): none
-- Cited by (reverse of Design docs): none
 - Shares design docs with (two hops via Design docs): qs-cli (Command-line runner) ×1; qs-config (Configuration loader) ×1; qs-devserver (Development server) ×1; qs-plugin-sdk (Plugin SDK) ×1
