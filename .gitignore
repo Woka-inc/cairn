@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.log
+# Cairn build leftovers (temporary and lock folders next to an output folder)
+.*.tmp-*/
+.*.old-*/
+.*.lock/
+# Scratch configs from `cairn init` experiments
+examples/**/x.json

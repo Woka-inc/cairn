@@ -1,0 +1,19 @@
+#!/bin/sh
+# Cairn: rebuild the vault after git pull / merge / checkout when its inputs changed.
+# Install (from the knowledge-base repository root):
+#   cp path/to/cairn/hooks/post-merge.sample .git/hooks/post-merge
+#   cp path/to/cairn/hooks/post-merge.sample .git/hooks/post-checkout
+#   chmod +x .git/hooks/post-merge .git/hooks/post-checkout
+# Then set the two paths below (relative to the repository root or absolute).
+# The hook never blocks git: it always exits 0 and only prints a note on failure.
+CAIRN_BIN="${CAIRN_BIN:-tools/cairn/bin/cairn.mjs}"
+CAIRN_CONFIG="${CAIRN_CONFIG:-cairn.config.json}"
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$root" || exit 0
+[ -f "$CAIRN_BIN" ] && [ -f "$CAIRN_CONFIG" ] || exit 0
+command -v node >/dev/null 2>&1 || exit 0
+if ! node "$CAIRN_BIN" build --config "$CAIRN_CONFIG" --if-stale --quiet; then
+  echo "cairn: vault rebuild failed (git was not affected); run: node $CAIRN_BIN build --config $CAIRN_CONFIG" >&2
+fi
+exit 0

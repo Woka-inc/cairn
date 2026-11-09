@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use Cairn, please cite the paper below."
+title: "Cairn"
+abstract: "A deterministic generator that adds compact cards, a one-row-per-node attribute table, and per-question-type wayfinding rules to a linked Markdown knowledge base, to lower the cost of agentic search."
+type: software
+authors:
+  - family-names: Song
+    given-names: Chioh
+    affiliation: Woka
+license: MIT
+repository-code: "https://github.com/Woka-inc/cairn"
+version: 0.1.0
+date-released: "2026-11-09"
+keywords:
+  - knowledge base
+  - LLM agents
+  - agentic search
+  - Markdown
+preferred-citation:
+  type: article
+  title: "Cairn: Compact Cards and Wayfinding for Lower-Cost Agentic Search over Linked Knowledge Bases"
+  authors:
+    - family-names: Song
+      given-names: Chioh
+      affiliation: Woka
+  year: 2026
+  journal: "arXiv preprint"
+  notes: "arXiv:XXXX.XXXXX (identifier to be added after submission)"

@@ -1,0 +1,35 @@
+{
+  "source": {
+    "dir": "kb",
+    "include": ["**/*.md"],
+    "exclude": ["README.md"]
+  },
+  "idField": "id",
+  "titleField": "title",
+  "descriptionField": "summary",
+  "attributes": ["kind", "layer", "stability", "language", "owner", "status"],
+  "edges": [
+    { "field": "depends_on", "label": "Depends on", "reverse": "Used by" },
+    { "field": "related", "label": "Related", "reverse": "Related from" },
+    { "field": "design_docs", "label": "Design docs", "reverse": "Cited by" }
+  ],
+  "sharedNeighbors": {
+    "via": "design_docs",
+    "label": "Shares design docs with",
+    "hubThreshold": 10
+  },
+  "k": 6,
+  "card": {
+    "fields": [
+      { "field": "goal", "label": "Goal" },
+      { "field": "decision", "label": "Decision" }
+    ],
+    "headings": true,
+    "headingLevels": [2],
+    "maxBytes": 3072
+  },
+  "catalog": {
+    "maxBytes": 8192
+  },
+  "output": "cairn-vault"
+}

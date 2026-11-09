@@ -1,0 +1,39 @@
+{
+  "name": "cairn-kb",
+  "version": "0.1.0",
+  "description": "Compact cards and wayfinding for lower-cost agentic search over linked Markdown knowledge bases.",
+  "type": "module",
+  "bin": {
+    "cairn": "bin/cairn.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "build-example": "node bin/cairn.mjs build --config examples/quillstone/cairn.config.json && node bin/cairn.mjs guide --config examples/quillstone/cairn.config.json --write examples/quillstone/AGENTS.md",
+    "check-example": "node bin/cairn.mjs check --config examples/quillstone/cairn.config.json",
+    "precheck": "node scripts/precheck.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "hooks/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "knowledge-base",
+    "llm",
+    "agents",
+    "markdown",
+    "obsidian",
+    "retrieval"
+  ],
+  "author": "Chioh Song",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Woka-inc/cairn.git"
+  }
+}

@@ -1,0 +1,19 @@
+Documentation license
+
+The documentation and prose in this repository (README.md, README.ko.md,
+INSTALL_PROMPT.md, INSTALL_PROMPT.ko.md, the files in docs/, and the synthetic
+example knowledge base in examples/) are licensed under the Creative Commons
+Attribution 4.0 International License (CC BY 4.0), as is the text of the paper
+"Cairn: Compact Cards and Wayfinding for Lower-Cost Agentic Search over Linked
+Knowledge Bases" by Chioh Song.
+
+    https://creativecommons.org/licenses/by/4.0/
+
+You may share and adapt this material for any purpose, including commercially,
+as long as you give appropriate credit, provide a link to the license, and
+indicate if changes were made.
+
+Copyright (c) 2026 Chioh Song
+
+The source code (bin/, src/, scripts/, test/, hooks/) is licensed under the MIT
+License; see LICENSE.
