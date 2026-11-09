@@ -98,7 +98,7 @@ function assertNotNode(config, file) {
   }
 }
 
-const display = (file) => path.relative(process.cwd(), file) || file
+const display = (file) => (path.relative(process.cwd(), file) || file).split(path.sep).join('/')
 
 function runGuide(values) {
   const config = loadConfig(values.config)

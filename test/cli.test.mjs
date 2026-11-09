@@ -182,6 +182,8 @@ test('init excludes instruction files, READMEs, and files without the id field',
 })
 
 test('the hook prints one line instead of failing silently when node or the config is missing', (t) => {
+  // The hook is a POSIX shell script; on Windows, Git for Windows runs it through its own bash, which this test cannot assume.
+  if (process.platform === 'win32') { t.skip('POSIX shell hook'); return }
   const dir = tempDir(t)
   const git = spawnSync('git', ['init', '-q', dir], { encoding: 'utf8' })
   if (git.status !== 0) { t.skip('git is not available'); return }
