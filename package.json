@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Compact cards and wayfinding for lower-cost agentic search over linked Markdown knowledge bases.",
   "type": "module",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "cairn": "bin/cairn.mjs"
   },

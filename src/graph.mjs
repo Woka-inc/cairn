@@ -25,9 +25,15 @@ export function listSourceFiles(config) {
 }
 
 /** The node id of a parsed source file, or '' when the file is not a node (no id field). */
-export function nodeIdOf(config, rel, data) {
-  if (config.idField === FILENAME_ID) return path.posix.basename(rel).replace(/\.[^.]+$/, '')
-  return oneLine(Array.isArray(data[config.idField]) ? '' : data[config.idField])
+export function nodeIdOf(config, rel, data, idField = config.idField) {
+  if (idField === FILENAME_ID) return path.posix.basename(rel).replace(/\.[^.]+$/, '')
+  return oneLine(Array.isArray(data[idField]) ? '' : data[idField])
+}
+
+/** Is this source file an intermediate note (sharedNeighbors.notes.include) rather than a node? */
+export function isNoteFile(config, rel) {
+  const include = config.sharedNeighbors?.notes?.include ?? []
+  return include.length > 0 && include.map(globToRegExp).some((re) => re.test(rel))
 }
 
 export const asList = (value) => {
@@ -58,23 +64,44 @@ export const fileStem = (id) => id.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').r
 export function loadNodes(config) {
   const files = listSourceFiles(config)
   const errors = []
-  const skipped = []
-  const nodes = []
+  const docs = []
+  const noteDocs = []
   for (const rel of files) {
-    const text = fs.readFileSync(path.join(config.sourceDir, ...rel.split('/')), 'utf8')
+    const raw = fs.readFileSync(path.join(config.sourceDir, ...rel.split('/')), 'utf8')
     let parsed
     try {
-      parsed = readFrontMatter(text)
+      parsed = readFrontMatter(raw)
     } catch (error) {
       if (error instanceof FrontMatterError) { errors.push(`${rel}: ${error.message}`); continue }
       throw error
     }
-    const { data, body } = parsed
-    const id = nodeIdOf(config, rel, data)
-    if (!id) { skipped.push(rel); continue }
-    const title = oneLine(typeof data[config.titleField] === 'string' ? data[config.titleField] : '') || id
-    const description = config.descriptionField ? oneLine(typeof data[config.descriptionField] === 'string' ? data[config.descriptionField] : '') : ''
-    nodes.push({ id, stem: fileStem(id), rel, data, body, title, description })
+    if (isNoteFile(config, rel)) noteDocs.push({ rel, raw, data: parsed.data, body: parsed.body })
+    else docs.push({ rel, data: parsed.data, body: parsed.body })
+  }
+  if (errors.length) throw new CairnError(`cannot read the knowledge base (${errors.length} problem${errors.length > 1 ? 's' : ''})`, 1, errors)
+  const loaded = nodesFromDocs(config, docs)
+  return { ...loaded, notes: notesFromDocs(config, noteDocs), fileCount: files.length }
+}
+
+/** A text field of a front-matter object as one line ('' when missing or not a string or number). */
+const textField = (data, field) => (field && typeof data[field] === 'string' ? oneLine(data[field]) : '')
+
+/**
+ * Turn parsed documents into nodes: [{ rel, data, body, id? }] -> { nodes, skipped, warnings }.
+ * A document without an id (given or read from the id field) is skipped. Used by loadNodes and by
+ * library callers that read their own files (planNodes).
+ */
+export function nodesFromDocs(config, docs) {
+  const errors = []
+  const skipped = []
+  const nodes = []
+  for (const doc of docs) {
+    const rel = doc.rel ?? ''
+    const data = doc.data ?? {}
+    const id = oneLine(doc.id ?? '') || nodeIdOf(config, rel, data)
+    if (!id) { skipped.push(rel || '(unnamed document)'); continue }
+    const name = textField(data, config.titleField)
+    nodes.push({ id, stem: fileStem(id), rel, data, body: String(doc.body ?? ''), name, title: name || id, description: textField(data, config.descriptionField) })
   }
   const byId = new Map()
   const byStem = new Map()
@@ -91,7 +118,31 @@ export function loadNodes(config) {
   if (skipped.length) {
     warnings.push(`${skipped.length} file(s) skipped because they have no "${config.idField}" field (they are not nodes and do not affect the fingerprint; add them to source.exclude to silence this): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ', …' : ''}`)
   }
-  return { nodes, skipped, warnings, fileCount: files.length }
+  return { nodes, skipped, warnings }
+}
+
+/**
+ * Intermediate notes (the targets of sharedNeighbors.via, rendered as their own files):
+ * [{ rel, raw, data, body, id? }] -> [{ id, stem, rel, raw, data, body, name, title }] sorted by id.
+ */
+export function notesFromDocs(config, docs) {
+  const spec = config.sharedNeighbors?.notes
+  if (!spec) return []
+  const errors = []
+  const notes = []
+  const seen = new Map()
+  for (const doc of docs) {
+    const rel = doc.rel ?? ''
+    const data = doc.data ?? {}
+    const id = oneLine(doc.id ?? '') || nodeIdOf(config, rel, data, spec.idField)
+    if (!id) { errors.push(`${rel || '(unnamed note)'}: no "${spec.idField}" field`); continue }
+    if (seen.has(id)) { errors.push(`duplicate note id "${id}" in ${seen.get(id)} and ${rel}`); continue }
+    seen.set(id, rel)
+    const name = textField(data, spec.titleField)
+    notes.push({ id, stem: fileStem(id), rel, raw: String(doc.raw ?? doc.body ?? ''), data, body: String(doc.body ?? ''), name, title: name || id })
+  }
+  if (errors.length) throw new CairnError(`cannot read the intermediate notes (${errors.length} problem${errors.length > 1 ? 's' : ''})`, 1, errors)
+  return notes.sort((a, b) => naturalCompare(a.id, b.id))
 }
 
 /**
@@ -102,8 +153,10 @@ export function loadNodes(config) {
  *  shared(id): { ranked: [[id, count]], total, hubs, shown, truncated, reason }
  *  hub: { threshold, auto, users } — users = nodes with at least one sharedNeighbors.via target
  */
-export function buildGraph(config, nodes) {
+export function buildGraph(config, nodes, notes = []) {
   const byId = new Map(nodes.map((n) => [n.id, n]))
+  const notesById = new Map(notes.map((n) => [n.id, n]))
+  const viaNotes = Boolean(config.sharedNeighbors?.notes)
   const forward = {}
   const reverse = {}
   const dangling = []
@@ -116,7 +169,9 @@ export function buildGraph(config, nodes) {
       for (const raw of asList(node.data[edge.field])) {
         const target = normalizeRef(raw)
         if (!target || seen.has(target) || target === node.id) continue
-        if (!byId.has(target) && !edge.external) { dangling.push(`${node.id} -[${edge.field}]-> ${target}`); continue }
+        // With intermediate notes, the via edge points at notes instead of nodes.
+        const known = viaNotes && edge.field === config.sharedNeighbors.via ? notesById.has(target) : byId.has(target) || edge.external
+        if (!known) { dangling.push(`${node.id} -[${edge.field}]-> ${target}`); continue }
         seen.add(target)
         targets.push(target)
       }
@@ -171,5 +226,5 @@ export function buildGraph(config, nodes) {
   if (dangling.length) {
     warnings.push(`${dangling.length} edge(s) point to unknown ids and were left out (mark the edge "external": true if its targets are not nodes): ${dangling.slice(0, 5).join(', ')}${dangling.length > 5 ? ', …' : ''}`)
   }
-  return { byId, forward, reverse, shared, usersOf, hub, dangling, warnings }
+  return { byId, notesById, forward, reverse, shared, usersOf, hub, dangling, warnings }
 }

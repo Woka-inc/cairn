@@ -5,9 +5,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { configDigestInput } from './config.mjs'
 import { FrontMatterError, readFrontMatter } from './frontmatter.mjs'
-import { renderWayfinding, START_MARKER, END_MARKER } from './guide.mjs'
-import { buildGraph, listSourceFiles, loadNodes, nodeIdOf } from './graph.mjs'
-import { describeSizes, oversized, planVault, sizeReport } from './render.mjs'
+import { renderWayfinding } from './guide.mjs'
+import { buildGraph, isNoteFile, listSourceFiles, loadNodes, nodeIdOf, nodesFromDocs, notesFromDocs } from './graph.mjs'
+import { describeSizes, isCardFile, oversized, planVault, sizeReport } from './render.mjs'
 import { CairnError, bytes, kb, sha256, walkFiles } from './util.mjs'
 
 export const TOOL = 'cairn'
@@ -32,6 +32,8 @@ export function generatorId() {
  */
 function filePart(config, rel) {
   const text = lf(fs.readFileSync(path.join(config.sourceDir, ...rel.split('/'))))
+  // Intermediate notes are copied into the vault, so their whole content counts.
+  if (isNoteFile(config, rel)) return `${rel}\u0000${sha256(text)}`
   try {
     const { data } = readFrontMatter(text)
     if (!nodeIdOf(config, rel, data)) return `${rel}\u0000-`
@@ -68,10 +70,24 @@ export function readManifest(outDir) {
 
 /** Plan the vault in memory. Returns { files, counts, warnings, over }. */
 export function plan(config) {
-  const loaded = loadNodes(config)
-  const graph = buildGraph(config, loaded.nodes)
+  return planLoaded(config, loadNodes(config))
+}
+
+function planLoaded(config, loaded) {
+  const graph = buildGraph(config, loaded.nodes, loaded.notes ?? [])
   const planned = planVault(config, loaded, graph)
-  return { ...planned, warnings: [...loaded.warnings, ...graph.warnings], over: oversized(config, planned.files), graph, loaded }
+  return { ...planned, warnings: [...loaded.warnings, ...graph.warnings, ...(planned.warnings ?? [])], over: oversized(config, planned.files), graph, loaded }
+}
+
+/**
+ * Plan a vault from documents the caller has already read (library use; nothing is read from or written to disk
+ * except template files). nodes: [{ rel?, id?, data, body }]; notes (intermediate notes, when
+ * sharedNeighbors.notes is set): [{ rel?, id?, raw, data, body }]. Returns the same shape as plan().
+ * The caller writes the files; build() and check() remain the file-based path.
+ */
+export function planNodes(config, { nodes = [], notes = [] } = {}) {
+  const loaded = nodesFromDocs(config, nodes)
+  return planLoaded(config, { ...loaded, notes: notesFromDocs(config, notes) })
 }
 
 const describeOver = (over) => over.map((o) => `${o.rel}: ${kb(o.bytes)} > ${kb(o.limit)} (${o.kind} target; ${o.bytes - o.limit} bytes over)`)
@@ -232,11 +248,11 @@ export function check(config) {
   else passed.push(`size targets met: ${sizes}`)
 
   const nodes = planned.counts.nodes
-  const cards = [...onDisk].filter((rel) => rel.startsWith('cards/')).length
+  const cards = [...onDisk].filter((rel) => isCardFile(config, rel)).length
   if (cards !== nodes) problems.push(`${cards} cards for ${nodes} nodes`)
   else passed.push(`${cards} cards = ${nodes} nodes`)
   const catalog = diskFiles.get('CATALOG.md')
-  if (catalog !== undefined) {
+  if (catalog !== undefined && !config.templates.catalog) {
     const rows = catalog.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| id |')).length
     if (rows !== nodes) problems.push(`CATALOG.md has ${rows} rows for ${nodes} nodes`)
     else passed.push(`CATALOG.md rows = ${nodes} nodes`)
@@ -247,8 +263,9 @@ export function check(config) {
     const shown = config.wayfinding.instructionFile
     const text = fs.existsSync(config.instructionPath) ? fs.readFileSync(config.instructionPath, 'utf8') : null
     const block = renderWayfinding(config).replace(/\n+$/, '')
+    const { start, end } = config.wayfinding.markers
     if (text === null) problems.push(`instruction file not found: ${shown} (run cairn guide --write ${shown})`)
-    else if (!text.includes(START_MARKER) || !text.includes(END_MARKER)) problems.push(`${shown} has no wayfinding block (run cairn guide --write ${shown})`)
+    else if (!text.includes(start) || !text.includes(end)) problems.push(`${shown} has no wayfinding block (run cairn guide --write ${shown})`)
     else if (!text.includes(block)) problems.push(`${shown} carries an outdated wayfinding block (run cairn guide --write ${shown})`)
     else passed.push(`${shown} carries the current wayfinding block`)
   }

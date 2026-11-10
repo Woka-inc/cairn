@@ -7,20 +7,26 @@ import { CairnError, isInside } from './util.mjs'
 export const FILENAME_ID = '$filename'
 
 export const DEFAULT_GENERAL_RULES = Object.freeze([
-  'Open full bodies (`{vault}/bodies/<id>.md`) only when a card does not contain what you need.',
+  'Open full bodies (`{body}`) only when a card does not contain what you need.',
   'If one route is insufficient, verify through a second route.',
   'Read vault files with file-reading and search tools, not shell commands.',
   'Use node identifiers exactly as they appear in the files or tool output.',
 ])
 
 export const DEFAULT_RULES = Object.freeze({
-  topical: 'Topical lookup (nodes whose content matches a topic): {search}. Open the best-matching cards; if there are no hits, search the full texts in `{vault}/bodies/`.',
+  topical: 'Topical lookup (nodes whose content matches a topic): {search}. Open the best-matching cards; if there are no hits, search the full texts in `{bodiesDir}/`.',
   attribute: 'Attribute filter (select nodes by {attributes}): read `{vault}/CATALOG.md`, one row per node, instead of opening cards one by one.',
-  relation: 'Relation lookup ({edges}): open `{vault}/cards/<id>.md` and read its Relations section{expanded}. "none" means no such neighbor exists.{omitted} A list is truncated only when it ends with "(K of N shown — reason)"; only then find the rest in the edge columns of `{vault}/CATALOG.md`, otherwise do not search further.',
+  relation: 'Relation lookup ({edges}): open `{card}` and read its Relations section{expanded}. "none" means no such neighbor exists.{omitted} A list is truncated only when it ends with "(K of N shown — reason)"; only then find the rest in the edge columns of `{vault}/CATALOG.md`, otherwise do not search further.',
   composition: 'Multi-node composition (several nodes that together cover several topics): run one search per topic, then combine and order the candidates with the columns of `{vault}/CATALOG.md`.',
 })
 
-export const DEFAULT_SEARCH = 'search the cards in `{vault}/cards/` for the topic\'s keywords with a file-search tool'
+export const DEFAULT_SEARCH = 'search the cards in `{cardsDir}/` for the topic\'s keywords with a file-search tool'
+
+export const DEFAULT_MARKERS = Object.freeze({ start: '<!-- cairn:wayfinding:start -->', end: '<!-- cairn:wayfinding:end -->' })
+export const DEFAULT_LAYOUT = Object.freeze({ cards: 'cards/{stem}.md', bodies: 'bodies/{stem}.md', wayfinding: 'WAYFINDING.md' })
+export const TEMPLATE_KEYS = ['card', 'body', 'catalog', 'index', 'note', 'attributeNote', 'wayfinding']
+/** Characters replaced by "-" in attribute-note file names: unsafe in file names or in [[wikilinks]]. */
+export const ATTRIBUTE_NAME_UNSAFE = /[\\/:*?"<>|#^[\]\s\u0000-\u001f]+/g
 
 const RULE_KEYS = ['topical', 'attribute', 'relation', 'composition']
 
@@ -32,15 +38,21 @@ export const autoHubThreshold = (users) => Math.max(HUB_MIN, Math.ceil(users * H
 
 /** Allowed keys per object, used to reject typos. */
 const SHAPE = {
-  root: ['$schema', '$comment', 'source', 'idField', 'titleField', 'descriptionField', 'kindField', 'attributes', 'edges', 'sharedNeighbors', 'k', 'card', 'catalog', 'index', 'bodies', 'output', 'wayfinding'],
+  root: ['$schema', '$comment', 'source', 'idField', 'titleField', 'descriptionField', 'kindField', 'attributes', 'edges', 'sharedNeighbors', 'k', 'card', 'catalog', 'index', 'bodies', 'output', 'wayfinding', 'layout', 'templates', 'attributeNotes'],
   source: ['dir', 'include', 'exclude'],
   edge: ['field', 'label', 'reverse', 'external'],
-  sharedNeighbors: ['via', 'label', 'hubThreshold'],
+  sharedNeighbors: ['via', 'label', 'hubThreshold', 'notes'],
+  notes: ['include', 'idField', 'titleField', 'path'],
+  layout: ['cards', 'bodies', 'wayfinding'],
+  templates: TEMPLATE_KEYS,
+  attributeNotes: ['attributes', 'path'],
+  attributeNoteField: ['field', 'label'],
+  markers: ['start', 'end'],
   card: ['fields', 'headings', 'headingLevels', 'maxHeadings', 'maxFieldChars', 'maxBytes', 'titlesInRelations'],
   cardField: ['field', 'label'],
   catalog: ['maxBytes', 'edgeColumns'],
   index: ['maxBytes'],
-  wayfinding: ['instructionFile', 'vaultPath', 'search', 'rules', 'general', 'extraRules'],
+  wayfinding: ['instructionFile', 'vaultPath', 'search', 'rules', 'general', 'extraRules', 'markers'],
   rules: RULE_KEYS,
 }
 
@@ -71,7 +83,7 @@ const humanize = (field) => {
  * Validate a raw config object. Returns { config, errors }. `config` is normalized with defaults;
  * paths are left relative here (resolveConfig makes them absolute).
  */
-export function validateConfig(raw) {
+export function validateConfig(raw, { sourceOptional = false } = {}) {
   const errors = []
   const err = (where, message) => errors.push(`${where}: ${message}`)
   const checkKeys = (obj, shape, where) => {
@@ -97,6 +109,15 @@ export function validateConfig(raw) {
     return value
   }
 
+  /** A relative output path pattern with {stem} (or {id}) that ends in .md. */
+  const pathPattern = (value, where, fallback, needs = ['{stem}', '{id}']) => {
+    if (value === undefined) return fallback
+    if (typeof value !== 'string' || !value.trim()) { err(where, 'must be a non-empty path pattern'); return fallback }
+    const bad = path.isAbsolute(value) || value.split(/[\\/]/).includes('..') || value.startsWith('.') || !value.endsWith('.md') || !needs.some((n) => value.includes(n))
+    if (bad) { err(where, `must be a relative path inside the vault that ends in .md and contains ${needs.join(' or ')} (got "${value}")`); return fallback }
+    return value.replace(/\\/g, '/')
+  }
+
   if (!isObject(raw)) return { config: null, errors: ['config: must be a JSON object'] }
   checkKeys(raw, 'root', 'config')
   if (raw.$comment !== undefined && typeof raw.$comment !== 'string' && !(Array.isArray(raw.$comment) && raw.$comment.every((c) => typeof c === 'string'))) {
@@ -105,7 +126,9 @@ export function validateConfig(raw) {
 
   // source
   const source = { dir: null, include: ['**/*.md'], exclude: [] }
-  if (!isObject(raw.source)) {
+  if (sourceOptional && raw.source === undefined) {
+    // Library use with nodes given in memory (planNodes): no source folder.
+  } else if (!isObject(raw.source)) {
     err('source', 'is required and must be an object such as { "dir": "notes" }')
   } else {
     checkKeys(raw.source, 'source', 'source')
@@ -175,11 +198,27 @@ export function validateConfig(raw) {
       else if (!edgeFields.includes(s.via)) err('sharedNeighbors.via', `"${s.via}" is not one of the edge fields (${edgeFields.join(', ') || 'none defined'})`)
       if (s.label !== undefined && (typeof s.label !== 'string' || !s.label.trim())) err('sharedNeighbors.label', 'must be a non-empty string')
       const viaEdge = edges.find((e) => e.field === s.via)
+      let notes = null
+      if (s.notes !== undefined && s.notes !== null) {
+        const n = s.notes
+        if (!isObject(n)) err('sharedNeighbors.notes', 'must be an object { "include": ["<glob>"], "path": "<folder>/{stem}.md" }')
+        else {
+          checkKeys(n, 'notes', 'sharedNeighbors.notes')
+          notes = {
+            include: stringList(n.include, 'sharedNeighbors.notes.include') ?? [],
+            idField: n.idField === undefined ? FILENAME_ID : n.idField,
+            titleField: n.titleField === undefined ? 'title' : n.titleField,
+            path: pathPattern(n.path, 'sharedNeighbors.notes.path', `${typeof s.via === 'string' ? s.via.replace(/[^\w-]+/g, '-') : 'notes'}/{stem}.md`),
+          }
+          for (const key of ['idField', 'titleField']) if (typeof notes[key] !== 'string' || !notes[key].trim()) err(`sharedNeighbors.notes.${key}`, 'must be a non-empty string (a front-matter field name, or "$filename")')
+        }
+      }
       sharedNeighbors = {
         via: s.via,
         label: typeof s.label === 'string' && s.label.trim() ? s.label : `Shares ${viaEdge ? viaEdge.label.toLowerCase() : s.via} with`,
         // null: automatic, max(3, ceil(25% of the nodes that use the via edge)); computed at build time.
         hubThreshold: s.hubThreshold === null ? null : posInt(s.hubThreshold, 'sharedNeighbors.hubThreshold', null, 2),
+        notes,
       }
     }
   }
@@ -257,7 +296,7 @@ export function validateConfig(raw) {
   }
 
   // wayfinding
-  const wayfinding = { instructionFile: null, vaultPath: null, search: DEFAULT_SEARCH, rules: { ...DEFAULT_RULES }, general: [...DEFAULT_GENERAL_RULES], extraRules: [] }
+  const wayfinding = { instructionFile: null, vaultPath: null, search: DEFAULT_SEARCH, rules: { ...DEFAULT_RULES }, general: [...DEFAULT_GENERAL_RULES], extraRules: [], markers: { ...DEFAULT_MARKERS } }
   if (raw.wayfinding !== undefined) {
     const w = raw.wayfinding
     if (!isObject(w)) err('wayfinding', 'must be an object')
@@ -288,10 +327,74 @@ export function validateConfig(raw) {
       }
       wayfinding.general = stringList(w.general, 'wayfinding.general') ?? wayfinding.general
       wayfinding.extraRules = stringList(w.extraRules, 'wayfinding.extraRules') ?? wayfinding.extraRules
+      if (w.markers !== undefined) {
+        if (!isObject(w.markers)) err('wayfinding.markers', 'must be an object { "start": "<!-- … -->", "end": "<!-- … -->" }')
+        else {
+          checkKeys(w.markers, 'markers', 'wayfinding.markers')
+          for (const key of ['start', 'end']) {
+            const v = w.markers[key]
+            if (v === undefined) continue
+            if (typeof v !== 'string' || !v.trim() || /\n/.test(v)) err(`wayfinding.markers.${key}`, 'must be a non-empty single-line string')
+            else wayfinding.markers[key] = v
+          }
+          if (wayfinding.markers.start === wayfinding.markers.end) err('wayfinding.markers', 'start and end must differ')
+        }
+      }
     }
   }
 
-  const config = { source, idField, titleField, descriptionField, kindField, attributes, edges, sharedNeighbors, k, card, catalog, index, bodies, output, wayfinding }
+  // layout: where cards, bodies, and WAYFINDING.md go inside the vault
+  const layout = { ...DEFAULT_LAYOUT }
+  if (raw.layout !== undefined) {
+    if (!isObject(raw.layout)) err('layout', 'must be an object { "cards": "cards/{stem}.md", "bodies": "bodies/{stem}.md", "wayfinding": "WAYFINDING.md" }')
+    else {
+      checkKeys(raw.layout, 'layout', 'layout')
+      layout.cards = pathPattern(raw.layout.cards, 'layout.cards', layout.cards)
+      layout.bodies = pathPattern(raw.layout.bodies, 'layout.bodies', layout.bodies)
+      if (raw.layout.wayfinding === null || raw.layout.wayfinding === false) layout.wayfinding = null
+      else if (raw.layout.wayfinding !== undefined) layout.wayfinding = pathPattern(raw.layout.wayfinding, 'layout.wayfinding', layout.wayfinding, ['.md'])
+    }
+  }
+
+  // templates: files that replace the built-in layout of each kind of generated file
+  const templates = {}
+  if (raw.templates !== undefined) {
+    if (!isObject(raw.templates)) err('templates', `must be an object with any of ${TEMPLATE_KEYS.join(', ')} (paths to template files, relative to the config file)`)
+    else {
+      checkKeys(raw.templates, 'templates', 'templates')
+      for (const key of TEMPLATE_KEYS) {
+        const v = raw.templates[key]
+        if (v === undefined || v === null) continue
+        if (typeof v !== 'string' || !v.trim()) err(`templates.${key}`, 'must be a path to a template file')
+        else templates[key] = v
+      }
+    }
+  }
+
+  // attribute notes: one note per value of the listed attributes
+  let attributeNotes = null
+  if (raw.attributeNotes !== undefined && raw.attributeNotes !== null) {
+    const a = raw.attributeNotes
+    if (!isObject(a)) err('attributeNotes', 'must be an object { "attributes": ["<field>" or { "field", "label" }], "path": "attributes/{attribute}-{value}.md" }')
+    else {
+      checkKeys(a, 'attributeNotes', 'attributeNotes')
+      const list = []
+      if (!Array.isArray(a.attributes) || a.attributes.length === 0) err('attributeNotes.attributes', 'must be a non-empty array of field names or { "field", "label" } objects')
+      else {
+        for (const [i, f] of a.attributes.entries()) {
+          if (typeof f === 'string' && f.trim()) list.push({ field: f, label: humanize(f) })
+          else if (isObject(f) && typeof f.field === 'string' && f.field.trim()) {
+            checkKeys(f, 'attributeNoteField', `attributeNotes.attributes[${i}]`)
+            list.push({ field: f.field, label: typeof f.label === 'string' && f.label.trim() ? f.label : humanize(f.field) })
+          } else err(`attributeNotes.attributes[${i}]`, 'must be a field name or { "field": "...", "label": "..." }')
+        }
+        if (new Set(list.map((f) => f.field)).size !== list.length) err('attributeNotes.attributes', 'must not repeat a field')
+      }
+      attributeNotes = { attributes: list, path: pathPattern(a.path, 'attributeNotes.path', 'attributes/{attribute}-{value}.md', ['{value}']) }
+    }
+  }
+
+  const config = { source, idField, titleField, descriptionField, kindField, attributes, edges, sharedNeighbors, k, card, catalog, index, bodies, output, wayfinding, layout, templates, attributeNotes }
   return { config, errors }
 }
 
@@ -315,7 +418,22 @@ export function loadConfig(configPath) {
 
 /** Validate a raw object and resolve its paths against baseDir. */
 export function resolveConfig(raw, baseDir, { file = null, requireSource = true } = {}) {
-  const { config, errors } = validateConfig(raw)
+  const { config, errors } = validateConfig(raw, { sourceOptional: !requireSource })
+  if (config && !config.source.dir && !requireSource) {
+    config.baseDir = baseDir
+    config.file = file
+    config.sourceDir = null
+    config.outDir = path.resolve(baseDir, config.output)
+    config.instructionPath = config.wayfinding.instructionFile ? path.resolve(baseDir, config.wayfinding.instructionFile) : null
+  }
+  if (config) {
+    config.templatePaths = {}
+    for (const [key, rel] of Object.entries(config.templates)) {
+      const abs = path.resolve(baseDir, rel)
+      if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) errors.push(`templates.${key}: file not found: ${rel} (relative to the config file)`)
+      config.templatePaths[key] = abs
+    }
+  }
   if (config && config.source.dir) {
     const sourceDir = path.resolve(baseDir, config.source.dir)
     const outDir = path.resolve(baseDir, config.output)
@@ -347,6 +465,8 @@ export function resolveConfig(raw, baseDir, { file = null, requireSource = true 
 
 /** Canonical JSON of the parts of a config that affect output (for the fingerprint). */
 export function configDigestInput(config) {
-  const { baseDir, file, sourceDir, outDir, instructionPath, ...rest } = config
-  return JSON.stringify(rest)
+  const { baseDir, file, sourceDir, outDir, instructionPath, templatePaths, ...rest } = config
+  // Template contents count as configuration: editing a template file makes the vault stale.
+  const templateText = Object.keys(templatePaths ?? {}).sort().map((key) => [key, fs.readFileSync(templatePaths[key], 'utf8').replace(/\r\n?/g, '\n')])
+  return JSON.stringify(templateText.length ? { ...rest, templateText } : rest)
 }

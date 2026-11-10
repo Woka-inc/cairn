@@ -1,10 +1,13 @@
 // Wayfinding: render the per-question-type rules block and insert it between markers
 // in an agent instruction file (CLAUDE.md, AGENTS.md, or a skill file).
+import fs from 'node:fs'
 import path from 'node:path'
+import { DEFAULT_MARKERS } from './config.mjs'
+import { render } from './template.mjs'
 import { CairnError } from './util.mjs'
 
-export const START_MARKER = '<!-- cairn:wayfinding:start -->'
-export const END_MARKER = '<!-- cairn:wayfinding:end -->'
+export const START_MARKER = DEFAULT_MARKERS.start
+export const END_MARKER = DEFAULT_MARKERS.end
 
 const RULE_TITLES = [
   ['topical', 'Topical lookup'],
@@ -37,9 +40,12 @@ export function templateValues(config, { file = null } = {}) {
   const parts = []
   if (reverseLabels.length) parts.push(`reverse edges (${reverseLabels.join('; ')})`)
   if (config.sharedNeighbors) parts.push(`two-hop neighbors (${config.sharedNeighbors.label})`)
-  const base = { vault }
+  const layoutPath = (pattern) => `${vault}/${pattern.replace(/\{(stem|id)\}/g, '<id>')}`
+  const dirOf = (pattern) => { const dir = path.posix.dirname(pattern); return dir === '.' ? vault : `${vault}/${dir}` }
+  const layout = config.layout ?? { cards: 'cards/{stem}.md', bodies: 'bodies/{stem}.md' }
+  const base = { vault, card: layoutPath(layout.cards), cardsDir: dirOf(layout.cards), body: layoutPath(layout.bodies), bodiesDir: dirOf(layout.bodies) }
   const values = {
-    vault,
+    ...base,
     source: from && config.sourceDir ? relPath(from, config.sourceDir) : config.source.dir,
     attributes: config.attributes.length ? config.attributes.join(', ') : 'attribute values',
     edges: config.edges.length ? config.edges.map((e) => e.label.toLowerCase()).join(', ') : 'links between nodes',
@@ -57,8 +63,14 @@ export function templateValues(config, { file = null } = {}) {
  */
 export function renderWayfinding(config, { file = null } = {}) {
   const v = templateValues(config, { file })
+  const { start, end } = config.wayfinding.markers ?? DEFAULT_MARKERS
+  if (config.templatePaths?.wayfinding) {
+    // A wayfinding template replaces everything between the markers; its context is the placeholder values.
+    const inner = render(fs.readFileSync(config.templatePaths.wayfinding, 'utf8'), v, path.basename(config.templatePaths.wayfinding)).replace(/\n+$/, '')
+    return `${start}\n${inner}\n${end}\n`
+  }
   const lines = [
-    START_MARKER,
+    start,
     '## Knowledge-base lookup (Cairn)',
     '',
     `The Cairn vault in \`${v.vault}/\` is generated from \`${v.source}/\`; do not edit it. Decide the question type first, then start where its rule says.`,
@@ -70,7 +82,7 @@ export function renderWayfinding(config, { file = null } = {}) {
     lines.push('', 'General rules:')
     for (const rule of config.wayfinding.general) lines.push(`- ${fill(rule, v)}`)
   }
-  lines.push(END_MARKER)
+  lines.push(end)
   return `${lines.join('\n')}\n`
 }
 
@@ -78,7 +90,9 @@ export function renderWayfinding(config, { file = null } = {}) {
  * Insert or replace the block in an instruction file's text.
  * Returns { text, action: 'replaced' | 'appended' | 'unchanged' }.
  */
-export function insertBlock(original, block) {
+export function insertBlock(original, block, markers = DEFAULT_MARKERS) {
+  const START_MARKER = markers.start
+  const END_MARKER = markers.end
   const text = String(original ?? '')
   const starts = text.split(START_MARKER).length - 1
   const ends = text.split(END_MARKER).length - 1

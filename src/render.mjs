@@ -1,9 +1,12 @@
 // Render: turn nodes and the expanded graph into the vault files (cards, CATALOG, INDEX, bodies, WAYFINDING).
 // Pure function of its inputs: stable sorting, no timestamps, '\n' line endings.
+import fs from 'node:fs'
 import path from 'node:path'
 import { renderWayfinding } from './guide.mjs'
 import { asList } from './graph.mjs'
 import { HUB_SHARE, HUB_MIN } from './config.mjs'
+import { compile, render } from './template.mjs'
+import { assertNoCollision, attributeGroups, bodyPath, cardPath, fillPath, makeViews, notePath, patternRegExp } from './view.mjs'
 import { bytes, cell, clip, kb, naturalCompare, oneLine } from './util.mjs'
 
 const MAX_LIST_ITEMS = 20
@@ -14,7 +17,7 @@ const q = (s) => JSON.stringify(s)
 /** "(K of N shown — reason)": the explicit truncation marker. */
 export const truncationMarker = (shown, total, reason) => `(${shown} of ${total} shown — ${reason})`
 
-function headingsOf(body, levels) {
+export function headingsOf(body, levels) {
   const out = []
   let fence = null
   for (const line of body.split('\n')) {
@@ -57,7 +60,14 @@ function frontValue(value) {
 }
 
 /** The kind of a node (value of config.kindField), '' when kindField is not set or the node has none. */
-const kindOf = (config, node) => (config.kindField ? valueText(node.data[config.kindField]) : '')
+export const kindOf = (config, node) => (config.kindField ? valueText(node.data[config.kindField]) : '')
+
+/** Compiled templates from config.templatePaths (read once per plan). */
+function loadTemplates(config) {
+  const out = {}
+  for (const [key, file] of Object.entries(config.templatePaths ?? {})) out[key] = compile(fs.readFileSync(file, 'utf8'), path.basename(file))
+  return out
+}
 
 /**
  * Which relation rows each kind of node carries. Without kindField every node is of one kind, so a row is
@@ -89,8 +99,13 @@ function relationRows(config, nodes, forward) {
 /** Plan all output files. Returns { files: Map<rel, content>, counts }. */
 export function planVault(config, loaded, graph) {
   const { nodes } = loaded
+  const notes = loaded.notes ?? []
   const { byId, forward, reverse } = graph
   const files = new Map()
+  const templates = loadTemplates(config)
+  const attrs = attributeGroups(config, nodes)
+  const views = makeViews(config, loaded, graph, attrs, headingsOf, kindOf)
+  const put = (rel, content, what) => { assertNoCollision(files, rel, what); files.set(rel, content) }
   const k = config.k
   const sn = config.sharedNeighbors
   const rows = relationRows(config, nodes, forward)
@@ -102,6 +117,14 @@ export function planVault(config, loaded, graph) {
   const list = (ids) => ids.map(ref).join('; ')
 
   for (const node of nodes) {
+    const cardRel = cardPath(config, node)
+    const bodyRel = bodyPath(config, node)
+    if (templates.card || templates.body) {
+      const view = views.nodeView(node.id)
+      if (templates.card) put(cardRel, render(templates.card, { node: view, ...view }), `card of ${node.id}`)
+      if (templates.body && config.bodies) put(bodyRel, render(templates.body, { node: view, ...view }), `body of ${node.id}`)
+    }
+    if (templates.card && (templates.body || !config.bodies)) continue
     const fm = ['---', `id: ${q(node.id)}`, `title: ${q(node.title)}`]
     for (const attr of config.attributes) {
       const value = node.data[attr]
@@ -111,7 +134,7 @@ export function planVault(config, loaded, graph) {
     fm.push('---')
     const lines = [`# ${node.id} — ${node.title}`, '']
     if (node.description) lines.push(`> ${clip(node.description, config.card.maxFieldChars)}`, '')
-    if (config.bodies) lines.push(`Full text: \`bodies/${node.stem}.md\``, '')
+    if (config.bodies) lines.push(`Full text: \`${bodyRel}\``, '')
     for (const f of config.card.fields) lines.push(...cardFieldLines(f.label, node.data[f.field], config.card.maxFieldChars))
     if (config.card.headings) {
       const hs = headingsOf(node.body, config.card.headingLevels)
@@ -159,10 +182,34 @@ export function planVault(config, loaded, graph) {
       rel.push(`- ${sn.label} (two hops via ${viaLabel}): ${text}`)
     }
     if (rel.length) lines.push('## Relations', '', ...rel, '')
-    files.set(`cards/${node.stem}.md`, `${fm.join('\n')}\n${lines.join('\n')}`)
-    if (config.bodies) {
+    if (!templates.card) put(cardRel, `${fm.join('\n')}\n${lines.join('\n')}`, `card of ${node.id}`)
+    if (config.bodies && !templates.body) {
       const body = node.body.replace(/^\s+/, '').replace(/\s+$/, '')
-      files.set(`bodies/${node.stem}.md`, `# ${node.id} — ${node.title}\n\n${body}${body ? '\n' : ''}`)
+      put(bodyRel, `# ${node.id} — ${node.title}\n\n${body}${body ? '\n' : ''}`, `body of ${node.id}`)
+    }
+  }
+
+  // Intermediate notes: each sharedNeighbors.via target as its own file, with the nodes that use it.
+  for (const note of notes) {
+    const rel = notePath(config, note)
+    const view = views.noteView(note.id)
+    if (templates.note) { put(rel, render(templates.note, view), `note ${note.id}`); continue }
+    const viaLabel = config.edges.find((e) => e.field === sn.via).label
+    const users = view.users.map((u) => ref(u.id)).join('; ')
+    put(rel, `${note.raw.replace(/\r\n?/g, '\n').replace(/\s+$/, '')}\n\n## Used by (reverse of ${viaLabel})\n\n- ${users || 'none'}\n`, `note ${note.id}`)
+  }
+
+  // Attribute notes: one file per value of each listed attribute.
+  for (const group of attrs.groups) {
+    for (const note of group.notes) {
+      const members = note.ids.map(views.nodeView)
+      const context = { field: group.field, attribute: group.field, label: group.label, value: note.value, path: note.path, target: note.target, members, count: members.length }
+      if (templates.attributeNote) { put(note.path, render(templates.attributeNote, context), `attribute note ${note.path}`); continue }
+      put(note.path, [
+        `# ${group.label}: ${note.value}`, '',
+        `${members.length} node${members.length === 1 ? '' : 's'} with ${group.field} = ${note.value}.`, '',
+        ...members.map((m) => `- ${ref(m.id)}${m.description ? ` — ${clip(m.description, 160)}` : ''}`), '',
+      ].join('\n'), `attribute note ${note.path}`)
     }
   }
 
@@ -174,7 +221,9 @@ export function planVault(config, loaded, graph) {
     for (const field of config.catalog.edgeColumns) cells.push(cell(forward[field].get(node.id).join(', ')))
     return `| ${cells.join(' | ')} |`
   })
-  files.set('CATALOG.md', [
+  if (templates.catalog) {
+    put('CATALOG.md', render(templates.catalog, { count: nodes.length, nodes: nodes.map((n) => views.nodeView(n.id)), attributes: config.attributes, edgeColumns: config.catalog.edgeColumns }), 'CATALOG.md')
+  } else files.set('CATALOG.md', [
     `# Catalog (${nodes.length} nodes)`,
     '',
     'One row per node. Filter by attribute or edge column here; open `cards/<id>.md` to judge one node.',
@@ -186,7 +235,7 @@ export function planVault(config, loaded, graph) {
   ].join('\n'))
 
   // INDEX: entry point with counts and attribute values.
-  const sourceLabel = path.isAbsolute(config.source.dir) ? path.basename(config.source.dir) : config.source.dir.replace(/\\/g, '/')
+  const sourceLabel = !config.source.dir ? '' : path.isAbsolute(config.source.dir) ? path.basename(config.source.dir) : config.source.dir.replace(/\\/g, '/')
   const index = [
     '# Cairn vault',
     '',
@@ -195,10 +244,13 @@ export function planVault(config, loaded, graph) {
     '## Files',
     '',
     `- \`CATALOG.md\`: attribute table, one row per node (${nodes.length} rows)`,
-    `- \`cards/<id>.md\`: compact card per node (${nodes.length})`,
+    `- \`${fillPath(config.layout.cards, { stem: '<id>', id: '<id>' })}\`: compact card per node (${nodes.length})`,
   ]
-  if (config.bodies) index.push(`- \`bodies/<id>.md\`: full text per node (${nodes.length})`)
-  index.push('- `WAYFINDING.md`: where to look first, by question type', '')
+  if (config.bodies) index.push(`- \`${fillPath(config.layout.bodies, { stem: '<id>', id: '<id>' })}\`: full text per node (${nodes.length})`)
+  if (sn?.notes) index.push(`- \`${fillPath(sn.notes.path, { stem: '<id>', id: '<id>' })}\`: one note per ${sn.via} target, with the nodes that use it (${notes.length})`)
+  for (const group of attrs.groups) index.push(`- ${group.label}: ${group.notes.map((n) => `\`${n.path}\``).join(', ') || 'none'}`)
+  if (config.layout.wayfinding) index.push(`- \`${config.layout.wayfinding}\`: where to look first, by question type`)
+  index.push('')
   if (config.attributes.length) {
     index.push('## Attribute values', '')
     for (const attr of config.attributes) {
@@ -224,23 +276,45 @@ export function planVault(config, loaded, graph) {
     }
     index.push('')
   }
-  files.set('INDEX.md', index.join('\n'))
-  files.set('WAYFINDING.md', renderWayfinding(config))
+  if (templates.index) {
+    let edgeTotal = 0
+    const edges = config.edges.map((e) => {
+      let total = 0
+      for (const targets of forward[e.field].values()) total += targets.length
+      edgeTotal += total
+      return { field: e.field, label: e.label, reverse: e.reverse ?? '', external: e.external, total }
+    })
+    put('INDEX.md', render(templates.index, {
+      count: nodes.length,
+      counts: { nodes: nodes.length, bodies: config.bodies ? nodes.length : 0, notes: notes.length, attributeNotes: attrs.groups.reduce((a, g) => a + g.notes.length, 0) },
+      source: sourceLabel,
+      attributeGroups: attrs.groups,
+      edges,
+      edgeTotal,
+      hub: graph.hub,
+      k,
+    }), 'INDEX.md')
+  } else put('INDEX.md', index.join('\n'), 'INDEX.md')
+  if (config.layout.wayfinding) put(config.layout.wayfinding, renderWayfinding(config), 'wayfinding')
 
   const sorted = new Map([...files.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)))
   return {
     files: sorted,
-    counts: { nodes: nodes.length, cards: nodes.length, bodies: config.bodies ? nodes.length : 0, catalogRows: tableRows.length },
+    counts: { nodes: nodes.length, cards: nodes.length, bodies: config.bodies ? nodes.length : 0, catalogRows: nodes.length, ...(sn?.notes ? { notes: notes.length } : {}), ...(attrs.groups.length ? { attributeNotes: attrs.groups.reduce((a, g) => a + g.notes.length, 0) } : {}) },
+    warnings: attrs.warnings,
   }
 }
 
 /** Files over their size target: [{ rel, bytes, limit, kind }]. */
+export const isCardFile = (config, rel) => patternRegExp(config.layout.cards).test(rel)
+
 export function oversized(config, files) {
   const over = []
+  const cardRe = patternRegExp(config.layout.cards)
   for (const [rel, content] of files) {
     let limit = null
     let kind = null
-    if (rel.startsWith('cards/')) { limit = config.card.maxBytes; kind = 'card' }
+    if (cardRe.test(rel)) { limit = config.card.maxBytes; kind = 'card' }
     else if (rel === 'CATALOG.md') { limit = config.catalog.maxBytes; kind = 'catalog' }
     else if (rel === 'INDEX.md') { limit = config.index.maxBytes; kind = 'index' }
     if (limit === null) continue
@@ -253,8 +327,9 @@ export function oversized(config, files) {
 /** Actual sizes against the targets: { card: { rel, bytes, limit } | null, catalog, index }. */
 export function sizeReport(config, files) {
   let card = null
+  const cardRe = patternRegExp(config.layout.cards)
   for (const [rel, content] of files) {
-    if (!rel.startsWith('cards/')) continue
+    if (!cardRe.test(rel)) continue
     const n = bytes(content)
     if (!card || n > card.bytes) card = { rel, bytes: n, limit: config.card.maxBytes }
   }

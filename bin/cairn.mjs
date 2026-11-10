@@ -110,7 +110,7 @@ function runGuide(values) {
   assertNotNode(config, file)
   const block = renderWayfinding(config, { file })
   const before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
-  const { text, action } = insertBlock(before, block)
+  const { text, action } = insertBlock(before, block, config.wayfinding.markers)
   if (action !== 'unchanged') fs.writeFileSync(file, text)
   if (!values.quiet) out(`cairn: wayfinding block ${action} in ${display(file)}`)
   const st = staleness(config)
