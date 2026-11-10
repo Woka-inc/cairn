@@ -1,0 +1,111 @@
+# Configuration
+
+English · [한국어](configuration.ko.md)
+
+Back to the [README](../README.md).
+
+## Commands
+
+```
+cairn build [--config cairn.config.json] [--if-stale] [--quiet]
+cairn check [--config cairn.config.json]
+cairn guide [--config cairn.config.json] [--write FILE]
+cairn init  <kb-folder> [--config cairn.config.json] [--write] [--force]
+cairn watch [--config cairn.config.json]
+```
+
+Run them as `node path/to/cairn/bin/cairn.mjs <command>`.
+
+| Command | What it does |
+|---|---|
+| `build` | Reads the notes, expands the graph, renders all files, checks size targets, writes to a temporary sibling folder, verifies it, and only then swaps it into place. Prints the counts and the actual sizes (largest card, `CATALOG.md`, `INDEX.md`) against their targets. If any card, the table, or the index exceeds its target, the build fails, lists each file with the bytes over, and leaves the previous vault untouched. `--if-stale` skips the build when the fingerprint is unchanged. |
+| `check` | Read-only. Confirms the config is valid, the fingerprint matches the current inputs, every file equals a fresh build byte for byte, size targets are met (with the actual sizes), there is one card and one table row per node, and, when `wayfinding.instructionFile` is set, that file carries the current block. Exits 1 on any problem. |
+| `guide` | Prints the wayfinding block, or with `--write FILE` inserts it between `<!-- cairn:wayfinding:start -->` and `<!-- cairn:wayfinding:end -->` (replacing an existing block, or appending one). Paths in the block are relative to `FILE`. It warns when the vault is stale and refuses to write into a note (a file inside `source.dir` with an id). |
+| `init` | Scans a folder and proposes a config: id, title, and description fields, `source.exclude` (agent instruction files, READMEs, and files without the id field), a kind field, edge fields (values that resolve to node ids), attributes (low-cardinality fields), card fields, and a shared-intermediate edge. Fields that are complete within one kind (for example `status` on every design document) are proposed even when their overall share is low, and the report shows the per-kind coverage. `--config` names the config file the proposal is for (`source.dir` is relative to its folder). Prints JSON unless `--write`. |
+| `watch` | Rebuilds when files under `source.dir` or the config change. |
+
+Exit codes: 0 ok, 1 failure, 2 usage or config error, 4 another build holds the lock.
+
+## Where the config and the vault go
+
+All paths in the config are relative to its folder. `source.dir` is the folder that holds the notes; `output` is the vault folder (default `cairn-vault`, next to the config).
+
+- **Notes in a subfolder** (for example `notes/` in a project): put the config at the project root with `"source": { "dir": "notes" }`. The vault goes next to the notes.
+- **Notes are the whole repository**: either put the config one level up, next to the repository, so the vault sits outside it; or keep the config at the root with `"source": { "dir": "." }`, so the vault is a subfolder of the notes. Cairn leaves its own output out of the inputs, but other tools that read the notes (Obsidian, for example) will see it, so exclude it there and decide about `.gitignore` ([below](#keeping-the-vault-fresh)).
+- `output` must not be the notes folder itself or contain it, because a build replaces the whole output folder; the error message suggests the fixes above.
+- Set `wayfinding.instructionFile` to the agent instruction file (relative to the config). Paths in the block are written relative to that file, it is never read as a note even inside the notes folder, and `check` verifies that it carries the current block.
+
+## Configuration reference
+
+`cairn.config.json`. Relative paths are resolved against the folder that holds the config file. Unknown keys are rejected (with a suggestion), and every problem is listed at once.
+
+```json
+{
+  "source": { "dir": "kb", "include": ["**/*.md"], "exclude": ["README.md"] },
+  "idField": "id",
+  "titleField": "title",
+  "descriptionField": "summary",
+  "kindField": "kind",
+  "attributes": ["kind", "layer", "stability", "language", "owner", "status"],
+  "edges": [
+    { "field": "depends_on", "label": "Depends on", "reverse": "Used by" },
+    { "field": "related", "label": "Related", "reverse": "Related from" },
+    { "field": "design_docs", "label": "Design docs", "reverse": "Cited by" }
+  ],
+  "sharedNeighbors": { "via": "design_docs", "label": "Shares design docs with" },
+  "k": 10,
+  "card": { "fields": ["goal", "decision"], "headings": true, "maxBytes": 5120 },
+  "catalog": { "maxBytes": 20480 },
+  "output": "cairn-vault",
+  "wayfinding": { "instructionFile": "AGENTS.md" }
+}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `$comment` | none | A string or a list of strings for notes about the config. Ignored, and not part of the fingerprint. |
+| `source.dir` | required | Knowledge-base folder. `output` may be a subfolder of it, but not the folder itself or a folder that contains it. |
+| `source.include` | `["**/*.md"]` | Globs (`*`, `**`, `?`) of node files, relative to `source.dir`. Dot-folders, Cairn's own output, and `wayfinding.instructionFile` are always skipped. |
+| `source.exclude` | `[]` | Globs to leave out (READMEs, templates, drafts). |
+| `idField` | `"id"` | Front-matter field with the node id, or `"$filename"` to use the file name without extension. Files without an id are not nodes: they are skipped with a warning and do not affect the fingerprint, so editing a README or an instruction file inside `source.dir` never makes the vault stale. Duplicate ids fail the build. |
+| `titleField` | `"title"` | Field shown as the node title (falls back to the id). |
+| `descriptionField` | none | Optional one-line description shown under the card title. |
+| `kindField` | none | Field that names a node's kind (for example `"kind"` or `"type"`). When set, a card leaves out relation rows that no node of its kind has: a forward or two-hop row when no node of the kind has the edge field at all, a reverse row when no node of the kind is a target of the edge. A used edge with no targets still reads `none`. Without it, every card lists every row. |
+| `attributes` | `[]` | Fields people filter on. They become card front matter, `CATALOG.md` columns, and value counts in `INDEX.md`. |
+| `edges[]` | `[]` | Typed edge fields. A string is shorthand for `{ "field": "<name>" }`. |
+| `edges[].field` | required | Front-matter field holding target ids (a list or a single value). `[[id]]`, `[[id\|alias]]`, `[text](path/id.md)`, and `path/id.md` are normalized to `id`. |
+| `edges[].label` | from the field name | Label on cards. |
+| `edges[].reverse` | none | Label for the reverse direction (for example `"Used by"`). When set, each card lists the nodes that point to it through this edge. Set it where people ask "what depends on X". |
+| `edges[].external` | `false` | Targets are not nodes (for example dataset names). They are listed as text and can still serve as shared intermediates. Otherwise edges to unknown ids are dropped with a warning. |
+| `sharedNeighbors.via` | none | Edge field whose targets are shared intermediates (evidence, cites, dataset, design doc). Two nodes that point to the same intermediate are two-hop neighbors. Add it only where such questions occur. |
+| `sharedNeighbors.label` | `"Shares <label> with"` | Label on cards. |
+| `sharedNeighbors.hubThreshold` | automatic | Intermediates used by this many nodes or more are hubs and are skipped (the skip is stated in the marker). Left out, it is 25% of the nodes that use the `via` edge, rounded up, and at least 3; `INDEX.md` states the value used. An intermediate shared by a quarter or more of those nodes says little about how two of them are related, the way a very common word says little in search, and its users would push more specific neighbors out of the top `k`. The floor of 3 keeps a small knowledge base from treating every shared intermediate as a hub. Set a number only after looking at real cards: lower it if lists are crowded by neighbors that share only a common intermediate, raise it if meaningful neighbors are skipped. |
+| `k` | `10` | Maximum neighbors listed per reverse or two-hop list. Shared neighbors are ranked by the number of shared intermediates, then by id. Forward edges are listed in full. |
+| `card.fields` | `[]` | Short author-written fields to keep on the card, as names or `{ "field", "label" }`. |
+| `card.headings` / `card.headingLevels` / `card.maxHeadings` | `true` / `[2]` / `20` | Section headings of the body listed on the card. |
+| `card.maxFieldChars` | `400` | Each kept field is clipped to this many characters (the full text stays in the body). |
+| `card.maxBytes` | `5120` | Card size target. Enforced before the vault is replaced. |
+| `card.titlesInRelations` | `true` | Write `id (Title)` instead of `id` in relation lists. |
+| `catalog.maxBytes` | `20480` | Attribute-table size target. The table grows linearly with the number of nodes, so this bounds the knowledge-base size one table can cover. |
+| `catalog.edgeColumns` | all non-external edges | Edge fields shown as table columns. |
+| `index.maxBytes` | `4096` | `INDEX.md` size target. |
+| `bodies` | `true` | Write `bodies/<id>.md`. |
+| `output` | `"cairn-vault"` | Output folder. Cairn refuses to replace a non-empty folder that it did not create. |
+| `wayfinding.instructionFile` | none | The agent instruction file that carries the block, relative to the config. Never read as a note; paths in `WAYFINDING.md` are written relative to it; `check` verifies that it carries the current block. |
+| `wayfinding.vaultPath` | computed | How the rules refer to the vault. By default every path in the block (vault and source) is relative to the instruction file: the `--write` target, else `wayfinding.instructionFile`, else the config folder. Set it only to force a different path; it is used verbatim. |
+| `wayfinding.search` | file search over `cards/` | The topical-search instruction, for example ``"run `kb search \"<query>\"`"``. |
+| `wayfinding.rules.topical` / `.attribute` / `.relation` / `.composition` | built in | Rule templates. Placeholders: `{vault}`, `{search}`, `{attributes}`, `{edges}`, `{expanded}`, `{omitted}` (the sentence about rows left out by `kindField`), `{source}`. |
+| `wayfinding.general` | four general rules | Replaces the general rules. |
+| `wayfinding.extraRules` | `[]` | Extra rule lines appended after the four types. |
+
+Output is deterministic: stable natural sorting, no timestamps, `\n` line endings. The same inputs give byte-identical files on every machine.
+
+## Keeping the vault fresh
+
+The fingerprint covers the node files (files with an id), the config, and the generator version. Rebuild whenever it changes, including after every config edit:
+
+- **git hook** (only when the notes are in a git repository): copy [`hooks/post-merge.sample`](../hooks/post-merge.sample) to `.git/hooks/post-merge` (and `post-checkout`) of the repository that holds the notes, set `CAIRN_BIN` and `CAIRN_CONFIG` at its top, and make it executable. The hook changes to the repository root first, so relative paths are read from there; when the config or Cairn lives outside the repository (for example the config one level up), use `../cairn.config.json` or an absolute path. It runs `build --if-stale --quiet`, never blocks git, and prints one line when it skips (node, Cairn, or the config not found) or fails.
+- **watch**: `node path/to/cairn/bin/cairn.mjs watch` while you edit. This also works when the notes are not in a git repository.
+- **CI**: run `cairn check` to fail a pull request whose vault is stale (if you commit the vault).
+
+The vault inherits the access rules of its sources. Whether it belongs in `.gitignore` is decided by the git repository that contains the vault folder (`git -C <folder that holds the vault> rev-parse --show-toplevel`); if it is in no repository, there is nothing to decide. Ignoring it is the safe default: it is generated, can be rebuilt at any time, and holds the same text as the notes. Commit it only when that repository already holds the notes with the same visibility and you want `check` in CI or readers without Node. Never let it into a repository that is more public than the notes, and keep it outside synced or published folders if the notes are private. A fingerprint sees only the copy it was computed from, so a lagging local copy goes stale without notice.

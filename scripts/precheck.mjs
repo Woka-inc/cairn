@@ -12,7 +12,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const KOREAN_ALLOWED = new Set(['README.ko.md', 'INSTALL_PROMPT.ko.md', 'docs/measure.ko.md'])
+const KOREAN_ALLOWED = new Set(['README.ko.md', 'INSTALL_PROMPT.ko.md', 'docs/measure.ko.md', 'docs/configuration.ko.md'])
 const SKIP_DIRS = new Set(['.git', 'node_modules'])
 const TEXT_EXT = /\.(md|mjs|js|json|jsonl|cff|yml|yaml|sh|txt|sample)$|^(LICENSE[^/]*|\.gitignore|\.gitattributes|\.nvmrc)$/
 
