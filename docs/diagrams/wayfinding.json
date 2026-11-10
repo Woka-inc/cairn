@@ -5,6 +5,7 @@
     "title": "Wayfinding: where the agent looks first",
     "locale": "en",
     "quality_profile": "showcase",
+    "node_style": "icon",
     "legend": {
       "mode": "hidden"
     }
@@ -45,7 +46,8 @@
       "type": "external",
       "label": "Question",
       "sublabel": "from the user",
-      "width": 172
+      "width": 180,
+      "icon": "circle-help"
     },
     {
       "id": "classify",
@@ -54,7 +56,8 @@
       "type": "backend",
       "label": "Pick the type",
       "sublabel": "wayfinding rules",
-      "width": 172
+      "width": 180,
+      "icon": "signpost"
     },
     {
       "id": "answer",
@@ -63,7 +66,8 @@
       "type": "frontend",
       "label": "Answer",
       "sublabel": "node ids + reasons",
-      "width": 172
+      "width": 180,
+      "icon": "message-square"
     },
     {
       "id": "search",
@@ -72,7 +76,8 @@
       "type": "cloud",
       "label": "Search cards",
       "sublabel": "or existing search",
-      "width": 172
+      "width": 180,
+      "icon": "search"
     },
     {
       "id": "body",
@@ -81,7 +86,8 @@
       "type": "database",
       "label": "Body file",
       "sublabel": "only if no hit",
-      "width": 172
+      "width": 180,
+      "icon": "file-text"
     },
     {
       "id": "catalog",
@@ -90,7 +96,8 @@
       "type": "database",
       "label": "CATALOG.md",
       "sublabel": "one row per node",
-      "width": 172
+      "width": 180,
+      "icon": "table"
     },
     {
       "id": "card",
@@ -99,7 +106,8 @@
       "type": "database",
       "label": "Card relations",
       "sublabel": "reverse + two-hop",
-      "width": 172
+      "width": 180,
+      "icon": "layers"
     },
     {
       "id": "rest",
@@ -108,7 +116,8 @@
       "type": "database",
       "label": "Edge columns",
       "sublabel": "only if truncated",
-      "width": 172
+      "width": 180,
+      "icon": "network"
     },
     {
       "id": "pertopic",
@@ -117,7 +126,8 @@
       "type": "cloud",
       "label": "Search per topic",
       "sublabel": "one query each",
-      "width": 172
+      "width": 180,
+      "icon": "scan-search"
     },
     {
       "id": "combine",
@@ -126,7 +136,8 @@
       "type": "database",
       "label": "Order with CATALOG",
       "sublabel": "attribute columns",
-      "width": 172
+      "width": 180,
+      "icon": "list-checks"
     }
   ],
   "edges": [

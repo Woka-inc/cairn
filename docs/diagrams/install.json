@@ -5,6 +5,7 @@
     "title": "Install with one prompt",
     "locale": "en",
     "quality_profile": "showcase",
+    "node_style": "icon",
     "legend": {
       "mode": "hidden"
     }
@@ -40,7 +41,8 @@
       "type": "external",
       "label": "Paste the prompt",
       "sublabel": "INSTALL_PROMPT.md",
-      "width": 176
+      "width": 190,
+      "icon": "user"
     },
     {
       "id": "ask",
@@ -49,7 +51,8 @@
       "type": "backend",
       "label": "Ask once",
       "sublabel": "KB path, rules file",
-      "width": 176
+      "width": 190,
+      "icon": "bot"
     },
     {
       "id": "init",
@@ -58,7 +61,8 @@
       "type": "messagebus",
       "label": "cairn init",
       "sublabel": "draft config only",
-      "width": 176
+      "width": 190,
+      "icon": "terminal"
     },
     {
       "id": "inspect",
@@ -67,7 +71,8 @@
       "type": "backend",
       "label": "Read real notes",
       "sublabel": "write the config",
-      "width": 176
+      "width": 190,
+      "icon": "file-search"
     },
     {
       "id": "build",
@@ -76,7 +81,8 @@
       "type": "messagebus",
       "label": "cairn build",
       "sublabel": "size targets checked",
-      "width": 176
+      "width": 190,
+      "icon": "cog"
     },
     {
       "id": "guide",
@@ -85,7 +91,8 @@
       "type": "messagebus",
       "label": "guide --write, check",
       "sublabel": "rules in, vault verified",
-      "width": 176
+      "width": 190,
+      "icon": "shield-check"
     },
     {
       "id": "report",
@@ -94,7 +101,8 @@
       "type": "frontend",
       "label": "Report",
       "sublabel": "pick rebuild mode",
-      "width": 176
+      "width": 190,
+      "icon": "circle-check"
     }
   ],
   "edges": [
