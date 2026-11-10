@@ -113,7 +113,8 @@ export function validateConfig(raw, { sourceOptional = false } = {}) {
   const pathPattern = (value, where, fallback, needs = ['{stem}', '{id}']) => {
     if (value === undefined) return fallback
     if (typeof value !== 'string' || !value.trim()) { err(where, 'must be a non-empty path pattern'); return fallback }
-    const bad = path.isAbsolute(value) || value.split(/[\\/]/).includes('..') || value.startsWith('.') || !value.endsWith('.md') || !needs.some((n) => value.includes(n))
+    const segments = value.split(/[\\/]/)
+    const bad = path.isAbsolute(value) || /^[A-Za-z]:/.test(value) || segments.some((s) => s === '' || s === '.' || s === '..' || s.startsWith('.')) || !value.endsWith('.md') || !needs.some((n) => value.includes(n))
     if (bad) { err(where, `must be a relative path inside the vault that ends in .md and contains ${needs.join(' or ')} (got "${value}")`); return fallback }
     return value.replace(/\\/g, '/')
   }

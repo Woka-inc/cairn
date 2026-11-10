@@ -105,19 +105,23 @@ export function planVault(config, loaded, graph) {
   const templates = loadTemplates(config)
   const attrs = attributeGroups(config, nodes)
   const views = makeViews(config, loaded, graph, attrs, headingsOf, kindOf)
-  const put = (rel, content, what) => { assertNoCollision(files, rel, what); files.set(rel, content) }
+  const taken = new Map()
+  const cards = new Set()
+  const put = (rel, content, what) => { assertNoCollision(taken, rel, what); files.set(rel, content) }
   const k = config.k
   const sn = config.sharedNeighbors
   const rows = relationRows(config, nodes, forward)
-  const ref = (id) => {
+  const ref = (id, field = null) => {
     if (!config.card.titlesInRelations) return id
-    const node = byId.get(id)
+    // With intermediate notes, via targets are notes: take their titles from the notes, not from nodes.
+    const node = sn?.notes && field === sn.via ? graph.notesById.get(id) : byId.get(id)
     return node && node.title !== id ? `${id} (${node.title})` : id
   }
-  const list = (ids) => ids.map(ref).join('; ')
+  const list = (ids, field = null) => ids.map((id) => ref(id, field)).join('; ')
 
   for (const node of nodes) {
     const cardRel = cardPath(config, node)
+    cards.add(cardRel)
     const bodyRel = bodyPath(config, node)
     if (templates.card || templates.body) {
       const view = views.nodeView(node.id)
@@ -151,10 +155,11 @@ export function planVault(config, loaded, graph) {
     for (const edge of config.edges) {
       if (!rows.forward(kind, edge.field)) continue
       const targets = forward[edge.field].get(node.id)
-      rel.push(`- ${edge.label}: ${targets.length ? list(targets) : 'none'}`)
+      rel.push(`- ${edge.label}: ${targets.length ? list(targets, edge.field) : 'none'}`)
     }
     for (const edge of config.edges) {
       if (!edge.reverse || !rows.reverse(kind, edge.field)) continue
+      if (sn?.notes && edge.field === sn.via) continue // its sources are listed on the intermediate notes
       const sources = reverse[edge.field].get(node.id) ?? []
       let text = 'none'
       if (sources.length) {
@@ -223,10 +228,10 @@ export function planVault(config, loaded, graph) {
   })
   if (templates.catalog) {
     put('CATALOG.md', render(templates.catalog, { count: nodes.length, nodes: nodes.map((n) => views.nodeView(n.id)), attributes: config.attributes, edgeColumns: config.catalog.edgeColumns }), 'CATALOG.md')
-  } else files.set('CATALOG.md', [
+  } else put('CATALOG.md', [
     `# Catalog (${nodes.length} nodes)`,
     '',
-    'One row per node. Filter by attribute or edge column here; open `cards/<id>.md` to judge one node.',
+    `One row per node. Filter by attribute or edge column here; open \`${fillPath(config.layout.cards, { stem: '<id>', id: '<id>' })}\` to judge one node.`,
     '',
     `| ${cols.join(' | ')} |`,
     `|${cols.map(() => '---').join('|')}|`,
@@ -302,21 +307,29 @@ export function planVault(config, loaded, graph) {
     files: sorted,
     counts: { nodes: nodes.length, cards: nodes.length, bodies: config.bodies ? nodes.length : 0, catalogRows: nodes.length, ...(sn?.notes ? { notes: notes.length } : {}), ...(attrs.groups.length ? { attributeNotes: attrs.groups.reduce((a, g) => a + g.notes.length, 0) } : {}) },
     warnings: attrs.warnings,
+    cards,
   }
 }
 
-/** Files over their size target: [{ rel, bytes, limit, kind }]. */
-export const isCardFile = (config, rel) => patternRegExp(config.layout.cards).test(rel)
+/**
+ * Is this vault file a card? With `cards` (the set planVault returns) the answer is exact; without it the layout
+ * pattern decides, and the fixed files (CATALOG.md, INDEX.md, the wayfinding file) are never cards.
+ */
+export function isCardFile(config, rel, cards = null) {
+  if (cards) return cards.has(rel)
+  if (rel === 'CATALOG.md' || rel === 'INDEX.md' || rel === config.layout.wayfinding) return false
+  return patternRegExp(config.layout.cards).test(rel)
+}
 
-export function oversized(config, files) {
+/** Files over their size target: [{ rel, bytes, limit, kind }]. Pass the planned `cards` set when you have it. */
+export function oversized(config, files, cards = null) {
   const over = []
-  const cardRe = patternRegExp(config.layout.cards)
   for (const [rel, content] of files) {
     let limit = null
     let kind = null
-    if (cardRe.test(rel)) { limit = config.card.maxBytes; kind = 'card' }
-    else if (rel === 'CATALOG.md') { limit = config.catalog.maxBytes; kind = 'catalog' }
+    if (rel === 'CATALOG.md') { limit = config.catalog.maxBytes; kind = 'catalog' }
     else if (rel === 'INDEX.md') { limit = config.index.maxBytes; kind = 'index' }
+    else if (isCardFile(config, rel, cards)) { limit = config.card.maxBytes; kind = 'card' }
     if (limit === null) continue
     const n = bytes(content)
     if (n > limit) over.push({ rel, bytes: n, limit, kind })
@@ -325,11 +338,10 @@ export function oversized(config, files) {
 }
 
 /** Actual sizes against the targets: { card: { rel, bytes, limit } | null, catalog, index }. */
-export function sizeReport(config, files) {
+export function sizeReport(config, files, cards = null) {
   let card = null
-  const cardRe = patternRegExp(config.layout.cards)
   for (const [rel, content] of files) {
-    if (!cardRe.test(rel)) continue
+    if (!isCardFile(config, rel, cards)) continue
     const n = bytes(content)
     if (!card || n > card.bytes) card = { rel, bytes: n, limit: config.card.maxBytes }
   }

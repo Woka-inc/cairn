@@ -76,7 +76,7 @@ export function plan(config) {
 function planLoaded(config, loaded) {
   const graph = buildGraph(config, loaded.nodes, loaded.notes ?? [])
   const planned = planVault(config, loaded, graph)
-  return { ...planned, warnings: [...loaded.warnings, ...graph.warnings, ...(planned.warnings ?? [])], over: oversized(config, planned.files), graph, loaded }
+  return { ...planned, warnings: [...loaded.warnings, ...graph.warnings, ...(planned.warnings ?? [])], over: oversized(config, planned.files, planned.cards), graph, loaded }
 }
 
 /**
@@ -164,7 +164,7 @@ export function build(config, { ifStale = false } = {}) {
     throw new CairnError(
       `size targets exceeded; the vault was not replaced (${planned.over.length} file${planned.over.length > 1 ? 's' : ''})`,
       1,
-      [...describeOver(planned.over), `Actual sizes: ${describeSizes(sizeReport(config, planned.files))}.`, 'Reduce card.fields, card.maxFieldChars, card.maxHeadings, or k, or raise the target in the config.'],
+      [...describeOver(planned.over), `Actual sizes: ${describeSizes(sizeReport(config, planned.files, planned.cards))}.`, 'Reduce card.fields, card.maxFieldChars, card.maxHeadings, or k, or raise the target in the config.'],
     )
   }
   const parent = path.dirname(out)
@@ -204,7 +204,7 @@ export function build(config, { ifStale = false } = {}) {
   } finally {
     fs.rmSync(lock, { recursive: true, force: true })
   }
-  return { action: 'built', counts: planned.counts, warnings: planned.warnings, fingerprint: fp.fingerprint, sizes: sizeReport(config, planned.files) }
+  return { action: 'built', counts: planned.counts, warnings: planned.warnings, fingerprint: fp.fingerprint, sizes: sizeReport(config, planned.files, planned.cards) }
 }
 
 /** Read-only verification. Returns { ok, passed: string[], problems: string[], stale: boolean, warnings: string[] }. */
@@ -242,13 +242,13 @@ export function check(config) {
 
   // Size targets, measured on disk.
   const diskFiles = new Map([...onDisk].filter((rel) => rel.endsWith('.md')).map((rel) => [rel, fs.readFileSync(path.join(out, ...rel.split('/')), 'utf8')]))
-  const over = oversized(config, diskFiles)
-  const sizes = describeSizes(sizeReport(config, diskFiles))
+  const over = oversized(config, diskFiles, planned.cards)
+  const sizes = describeSizes(sizeReport(config, diskFiles, planned.cards))
   if (over.length) problems.push(...describeOver(over), `actual sizes: ${sizes}`)
   else passed.push(`size targets met: ${sizes}`)
 
   const nodes = planned.counts.nodes
-  const cards = [...onDisk].filter((rel) => isCardFile(config, rel)).length
+  const cards = [...onDisk].filter((rel) => isCardFile(config, rel, planned.cards)).length
   if (cards !== nodes) problems.push(`${cards} cards for ${nodes} nodes`)
   else passed.push(`${cards} cards = ${nodes} nodes`)
   const catalog = diskFiles.get('CATALOG.md')

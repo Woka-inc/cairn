@@ -99,10 +99,10 @@ cairn watch [--config cairn.config.json]
 | `wayfinding.extraRules` | `[]` | 네 종류 규칙 뒤에 덧붙일 규칙 줄. |
 | `wayfinding.markers` | `{ "start": "<!-- cairn:wayfinding:start -->", "end": "<!-- cairn:wayfinding:end -->" }` | 지침 파일 안에서 블록 앞뒤에 둘 표지. 그 파일이 이미 자기 표지를 쓰고 있으면 바꿉니다. `guide --write`와 `check`는 여기 정한 표지를 씁니다. |
 | 규칙 안의 배치 자리표시자 | — | 위 자리표시자에 더해 규칙 템플릿과 `wayfinding.search`에서 `{card}`(`<볼트>/<카드 경로, id 자리는 <id>>`), `{cardsDir}`, `{body}`, `{bodiesDir}`를 쓸 수 있습니다. 이 값은 `layout`을 따라갑니다. 기본 규칙도 이 자리표시자를 쓰므로, `layout`으로 카드나 본문 위치를 옮겨도 안내가 틀리지 않습니다. |
-| `layout.cards` | `"cards/{stem}.md"` | 볼트 안에서 카드를 둘 곳. `.md`로 끝나고 `{stem}`(파일 이름에 쓸 수 있게 고친 id)이 든 상대 경로입니다. 크기 목표와 `check`는 이 모양으로 카드를 찾습니다. |
+| `layout.cards` | `"cards/{stem}.md"` | 볼트 안에서 카드를 둘 곳. `.md`로 끝나고 `{stem}`(파일 이름에 쓸 수 있게 고친 id)이 든 상대 경로입니다. `{id}`라고 써도 같습니다. 크기 목표와 `check`는 이 모양으로 카드를 찾습니다. |
 | `layout.bodies` | `"bodies/{stem}.md"` | 본문 전문을 둘 곳(예: `"text/{stem}-text.md"`). |
 | `layout.wayfinding` | `"WAYFINDING.md"` | 볼트 안 길 안내 파일의 경로. 블록을 지침 파일에만 두려면 `null`로 빼 둡니다. |
-| `sharedNeighbors.notes` | 없음 | `via` 대상마다 노트를 하나씩 따로 씁니다. 그 대상을 함께 쓰는 노드 전체가 파일 하나에 모입니다. `include`에는 노트 파일을 고르는 glob(`source.dir` 기준)을 적고, 이 파일들은 노드로 읽지 않습니다. 노트를 쓰면 `via` 연결은 노트를 가리키므로, 노트가 없는 대상은 경고와 함께 버립니다. |
+| `sharedNeighbors.notes` | 없음 | `via` 대상마다 노트를 하나씩 따로 씁니다. 그 대상을 함께 쓰는 노드 전체가 파일 하나에 모입니다. `include`에는 노트 파일을 고르는 glob(`source.dir` 기준)을 적고, 이 파일들은 노드로 읽지 않습니다. 노트 파일은 `source.include`에도 걸리고 `source.exclude`에는 걸리지 않아야 합니다. `include`에 걸리는 파일이 하나도 없으면 경고로 알려 줍니다. 노트를 쓰면 `via` 연결은 노트를 가리키므로, 노트가 없는 대상은 경고와 함께 버립니다. |
 | `sharedNeighbors.notes.include` / `.idField` / `.titleField` / `.path` | `[]` / `"$filename"` / `"title"` / `"<via>/{stem}.md"` | 노트 파일, 노트의 id와 제목을 읽는 법, 노트를 둘 곳. 노트는 원본 파일 그대로에 그 대상을 쓰는 노드 목록을 붙인 것입니다. 노트 내용도 지문에 들어갑니다. |
 | `attributeNotes.attributes` | 없음 | 값마다 노트를 하나씩 만들 필드(이름 또는 `{ "field", "label" }`). 노트에는 그 값을 가진 노드를 적습니다. 카드는 자기가 속한 노트를 템플릿 값 `attributeNotes`로 링크할 수 있습니다. |
 | `attributeNotes.path` | `"attributes/{attribute}-{value}.md"` | 속성 노트를 둘 곳. 파일 이름이나 `[[위키링크]]`에 쓸 수 없는 글자(`\ / : * ? " < > \| # ^ [ ]`와 공백)는 `-`로 바꿉니다. |
@@ -148,7 +148,7 @@ cairn watch [--config cairn.config.json]
 {{! 주석 }}
 ```
 
-블록 태그 하나만 있는 줄은 줄바꿈까지 함께 지우므로, 블록 태그를 한 줄에 따로 두어도 빈 줄이 남지 않습니다. 끼워 넣은 값은 다시 해석하지 않습니다. 문법 오류에는 템플릿 파일 이름과 줄 번호가 붙습니다. 옵시디언 방식 카드의 예는 다음과 같습니다.
+블록 태그 하나만 있는 줄은 줄바꿈까지 함께 지우므로, 블록 태그를 한 줄에 따로 두어도 빈 줄이 남지 않습니다. 끼워 넣은 값은 다시 해석하지 않습니다. 태그는 처음 나오는 `}}`에서 끝나므로, 따옴표 안의 인자에도 `}}`는 쓸 수 없습니다. 문법 오류에는 템플릿 파일 이름과 줄 번호가 붙습니다. 옵시디언 방식 카드의 예는 다음과 같습니다.
 
 ```
 # {{id}} {{name}}

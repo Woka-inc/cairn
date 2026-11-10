@@ -163,3 +163,56 @@ test('two outputs that map to the same path are refused', (t) => {
   fs.writeFileSync(path.join(kb, 'evidence', 'A.md'), '---\ntitle: clash\n---\n')
   assert.throws(() => plan(config), /two generated files map to cards\/A\.md/)
 })
+
+test('cards at the vault root: fixed files keep their own size targets and are not counted as cards', (t) => {
+  const dir = tempDir(t)
+  writeKb(dir, NODES)
+  const config = makeConfig(dir, { layout: { cards: '{stem}.md' }, card: { maxBytes: 600 } })
+  const res = build(config)
+  assert.equal(res.action, 'built')
+  const ok = check(config)
+  assert.ok(ok.ok, ok.problems.join('\n'))
+  assert.ok(ok.passed.some((p) => p.includes('3 cards = 3 nodes')), ok.passed.join('\n'))
+})
+
+test('references carry every key, so templates never fall back to the enclosing node', (t) => {
+  const dir = tempDir(t)
+  const kb = writeKb(dir, NODES)
+  writeNotes(kb)
+  fs.mkdirSync(path.join(dir, 'tmpl'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'tmpl', 'card.tmpl'), '{{#each relations.evidence.items}}[{{description}}|{{bodyTarget}}|{{cardPath}}]{{/each}}\n')
+  const config = makeConfig(dir, {
+    descriptionField: 'tier',
+    sharedNeighbors: { via: 'evidence', notes: { include: ['evidence/*.md'] } },
+    templates: { card: 'tmpl/card.tmpl' },
+  })
+  assert.equal(plan(config).files.get('cards/A.md'), '[||][||]\n')
+})
+
+test('the built-in card titles via targets from their notes and leaves the via reverse row to the notes', (t) => {
+  const dir = tempDir(t)
+  const kb = writeKb(dir, [...NODES, { id: 'E1', title: 'Node named like a note' }])
+  writeNotes(kb)
+  const config = makeConfig(dir, { sharedNeighbors: { via: 'evidence', notes: { include: ['evidence/*.md'] } } })
+  const files = plan(config).files
+  assert.match(files.get('cards/A.md'), /- Evidence: E1 \(First source\); E2 \(Second source\)/)
+  assert.ok(!files.get('cards/E1.md').includes('Evidence for'), files.get('cards/E1.md'))
+})
+
+test('outputs that differ only by case collide, and a note glob that matches nothing is reported', (t) => {
+  const dir = tempDir(t)
+  const kb = writeKb(dir, [{ id: 'A', attrs: { tier: 'Core' } }, { id: 'B', attrs: { tier: 'core' } }])
+  const config = makeConfig(dir, { attributeNotes: { attributes: ['tier'] } })
+  assert.throws(() => plan(config), /two generated files map to attributes\/tier-core\.md/)
+  const quiet = makeConfig(dir, { sharedNeighbors: { via: 'evidence', notes: { include: ['nothing/*.md'] } } })
+  assert.ok(plan(quiet).warnings.some((w) => w.includes('sharedNeighbors.notes.include matched no files')))
+  void kb
+})
+
+test('path patterns with empty, dot, or drive segments are refused', (t) => {
+  const dir = tempDir(t)
+  writeKb(dir, NODES)
+  for (const bad of ['cards//{stem}.md', 'cards/./{stem}.md', 'C:/x/{stem}.md']) {
+    assert.throws(() => makeConfig(dir, { layout: { cards: bad } }), (e) => e.details.some((d) => d.startsWith('layout.cards: must be a relative path')), bad)
+  }
+})

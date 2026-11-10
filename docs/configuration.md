@@ -99,10 +99,10 @@ All paths in the config are relative to its folder. `source.dir` is the folder t
 | `wayfinding.extraRules` | `[]` | Extra rule lines appended after the four types. |
 | `wayfinding.markers` | `{ "start": "<!-- cairn:wayfinding:start -->", "end": "<!-- cairn:wayfinding:end -->" }` | Markers around the block in the instruction file. Change them when the file already uses its own markers; `guide --write` and `check` use the configured pair. |
 | Layout placeholders in rules | — | Besides the placeholders above, rule templates and `wayfinding.search` may use `{card}` (`<vault>/<card path with <id>>`), `{cardsDir}`, `{body}`, and `{bodiesDir}`, which follow `layout`. The default rules use them, so they stay correct when `layout` moves cards or bodies. |
-| `layout.cards` | `"cards/{stem}.md"` | Where each card goes inside the vault. A relative path that ends in `.md` and contains `{stem}` (the file-safe id). Size targets and `check` find cards by this pattern. |
+| `layout.cards` | `"cards/{stem}.md"` | Where each card goes inside the vault. A relative path that ends in `.md` and contains `{stem}` (the file-safe id; `{id}` is accepted as a synonym). Size targets and `check` find cards by this pattern. |
 | `layout.bodies` | `"bodies/{stem}.md"` | Where each full body goes (for example `"text/{stem}-text.md"`). |
 | `layout.wayfinding` | `"WAYFINDING.md"` | Path of the wayfinding file inside the vault, or `null` to leave it out (when the block lives only in the instruction file). |
-| `sharedNeighbors.notes` | none | Write each `via` target as its own note, so the full list of nodes that share it is one file away. `include` lists globs (relative to `source.dir`) of the note files; those files are not nodes. With notes, the `via` edge points at notes: a target without a note is dropped with a warning. |
+| `sharedNeighbors.notes` | none | Write each `via` target as its own note, so the full list of nodes that share it is one file away. `include` lists globs (relative to `source.dir`) of the note files; those files are not nodes. Note files must also be selected by `source.include` and not removed by `source.exclude`; a warning says so when `include` matches nothing. With notes, the `via` edge points at notes: a target without a note is dropped with a warning. |
 | `sharedNeighbors.notes.include` / `.idField` / `.titleField` / `.path` | `[]` / `"$filename"` / `"title"` / `"<via>/{stem}.md"` | Note files, how their id and title are read, and where each note goes. A note is the source file as written plus the list of nodes that use it. Note contents count toward the fingerprint. |
 | `attributeNotes.attributes` | none | Fields (names or `{ "field", "label" }`) that get one note per value, listing the nodes with that value. Each card can link the notes it belongs to (template value `attributeNotes`). |
 | `attributeNotes.path` | `"attributes/{attribute}-{value}.md"` | Where each attribute note goes. Characters that are unsafe in file names or `[[wikilinks]]` (`\ / : * ? " < > \| # ^ [ ]` and whitespace) become `-`. |
@@ -148,7 +148,7 @@ The template language:
 {{! comment }}
 ```
 
-A line that holds only one block tag is removed together with its line break, so block tags can stand on their own lines. Inserted values are never parsed again. Syntax errors name the template file and line. For example, a card in Obsidian style:
+A line that holds only one block tag is removed together with its line break, so block tags can stand on their own lines. Inserted values are never parsed again. A tag ends at the first `}}`, so a quoted argument cannot contain `}}`. Syntax errors name the template file and line. For example, a card in Obsidian style:
 
 ```
 # {{id}} {{name}}

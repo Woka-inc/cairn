@@ -63,20 +63,21 @@ export function makeViews(config, loaded, graph, attrs, headingsOf, kindOf) {
   const nodeRef = (id) => {
     const n = byId.get(id)
     const card = cardPath(config, n)
-    const ref = { id: n.id, stem: n.stem, name: n.name, title: n.title, description: n.description, path: card, target: noExt(card), cardPath: card, cardTarget: noExt(card) }
+    const ref = { id: n.id, stem: n.stem, name: n.name, title: n.title, description: n.description, path: card, target: noExt(card), cardPath: card, cardTarget: noExt(card), bodyPath: '', bodyTarget: '' }
     if (config.bodies) { const b = bodyPath(config, n); ref.bodyPath = b; ref.bodyTarget = noExt(b) }
     return ref
   }
   const noteRef = (id) => {
     const n = notesById.get(id)
     const rel = notePath(config, n)
-    return { id: n.id, stem: n.stem, name: n.name, title: n.title, path: rel, target: noExt(rel) }
+    // Every reference carries every key, so a template never falls back to the enclosing node's values.
+    return { id: n.id, stem: n.stem, name: n.name, title: n.title, description: '', path: rel, target: noExt(rel), cardPath: '', cardTarget: '', bodyPath: '', bodyTarget: '' }
   }
   /** A target of an edge: a node, an intermediate note, or (for an external edge) a bare id. */
   const targetRef = (field, id) => {
     if (viaNotes && field === sn.via) return noteRef(id)
     if (byId.has(id)) return nodeRef(id)
-    return { id, stem: id, name: '', title: id, path: '', target: id }
+    return { id, stem: id, name: '', title: id, description: '', path: '', target: id, cardPath: '', cardTarget: '', bodyPath: '', bodyTarget: '' }
   }
 
   const cache = new Map()
@@ -124,6 +125,9 @@ export function makeViews(config, loaded, graph, attrs, headingsOf, kindOf) {
 }
 
 /** Fail when two generated files would land on the same path. */
-export function assertNoCollision(files, rel, what) {
-  if (files.has(rel)) throw new CairnError(`two generated files map to ${rel} (${what}); change layout, sharedNeighbors.notes.path, or attributeNotes.path`)
+export function assertNoCollision(taken, rel, what) {
+  // Compared without case: on case-insensitive file systems (macOS, Windows) "A.md" and "a.md" are one file.
+  const key = rel.toLowerCase()
+  if (taken.has(key)) throw new CairnError(`two generated files map to ${rel} (${what}; also ${taken.get(key)}); change layout, sharedNeighbors.notes.path, or attributeNotes.path`)
+  taken.set(key, what)
 }

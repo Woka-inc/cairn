@@ -80,10 +80,13 @@ export function loadNodes(config) {
   }
   if (errors.length) throw new CairnError(`cannot read the knowledge base (${errors.length} problem${errors.length > 1 ? 's' : ''})`, 1, errors)
   const loaded = nodesFromDocs(config, docs)
+  if (config.sharedNeighbors?.notes && noteDocs.length === 0) {
+    loaded.warnings.push(`sharedNeighbors.notes.include matched no files; note files must also match source.include and not source.exclude (${config.sharedNeighbors.notes.include.join(', ') || 'no globs given'})`)
+  }
   return { ...loaded, notes: notesFromDocs(config, noteDocs), fileCount: files.length }
 }
 
-/** A text field of a front-matter object as one line ('' when missing or not a string or number). */
+/** A text field of a front-matter object as one line ('' when missing or not a string). */
 const textField = (data, field) => (field && typeof data[field] === 'string' ? oneLine(data[field]) : '')
 
 /**
