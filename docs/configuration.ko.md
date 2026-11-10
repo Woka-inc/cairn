@@ -97,8 +97,70 @@ cairn watch [--config cairn.config.json]
 | `wayfinding.rules.topical` / `.attribute` / `.relation` / `.composition` | 내장 | 규칙 템플릿. 자리표시자: `{vault}`, `{search}`, `{attributes}`, `{edges}`, `{expanded}`, `{omitted}`(`kindField` 때문에 뺀 줄을 알리는 문장), `{source}`. |
 | `wayfinding.general` | 일반 규칙 4개 | 일반 규칙을 이 값으로 바꿉니다. |
 | `wayfinding.extraRules` | `[]` | 네 종류 규칙 뒤에 덧붙일 규칙 줄. |
+| `wayfinding.markers` | `{ "start": "<!-- cairn:wayfinding:start -->", "end": "<!-- cairn:wayfinding:end -->" }` | 지침 파일 안에서 블록 앞뒤에 둘 표지. 그 파일이 이미 자기 표지를 쓰고 있으면 바꿉니다. `guide --write`와 `check`는 여기 정한 표지를 씁니다. |
+| 규칙 안의 배치 자리표시자 | — | 위 자리표시자에 더해 규칙 템플릿과 `wayfinding.search`에서 `{card}`(`<볼트>/<카드 경로, id 자리는 <id>>`), `{cardsDir}`, `{body}`, `{bodiesDir}`를 쓸 수 있습니다. 이 값은 `layout`을 따라갑니다. 기본 규칙도 이 자리표시자를 쓰므로, `layout`으로 카드나 본문 위치를 옮겨도 안내가 틀리지 않습니다. |
+| `layout.cards` | `"cards/{stem}.md"` | 볼트 안에서 카드를 둘 곳. `.md`로 끝나고 `{stem}`(파일 이름에 쓸 수 있게 고친 id)이 든 상대 경로입니다. 크기 목표와 `check`는 이 모양으로 카드를 찾습니다. |
+| `layout.bodies` | `"bodies/{stem}.md"` | 본문 전문을 둘 곳(예: `"text/{stem}-text.md"`). |
+| `layout.wayfinding` | `"WAYFINDING.md"` | 볼트 안 길 안내 파일의 경로. 블록을 지침 파일에만 두려면 `null`로 빼 둡니다. |
+| `sharedNeighbors.notes` | 없음 | `via` 대상마다 노트를 하나씩 따로 씁니다. 그 대상을 함께 쓰는 노드 전체가 파일 하나에 모입니다. `include`에는 노트 파일을 고르는 glob(`source.dir` 기준)을 적고, 이 파일들은 노드로 읽지 않습니다. 노트를 쓰면 `via` 연결은 노트를 가리키므로, 노트가 없는 대상은 경고와 함께 버립니다. |
+| `sharedNeighbors.notes.include` / `.idField` / `.titleField` / `.path` | `[]` / `"$filename"` / `"title"` / `"<via>/{stem}.md"` | 노트 파일, 노트의 id와 제목을 읽는 법, 노트를 둘 곳. 노트는 원본 파일 그대로에 그 대상을 쓰는 노드 목록을 붙인 것입니다. 노트 내용도 지문에 들어갑니다. |
+| `attributeNotes.attributes` | 없음 | 값마다 노트를 하나씩 만들 필드(이름 또는 `{ "field", "label" }`). 노트에는 그 값을 가진 노드를 적습니다. 카드는 자기가 속한 노트를 템플릿 값 `attributeNotes`로 링크할 수 있습니다. |
+| `attributeNotes.path` | `"attributes/{attribute}-{value}.md"` | 속성 노트를 둘 곳. 파일 이름이나 `[[위키링크]]`에 쓸 수 없는 글자(`\ / : * ? " < > \| # ^ [ ]`와 공백)는 `-`로 바꿉니다. |
+| `templates.card` / `.body` / `.catalog` / `.index` / `.note` / `.attributeNote` / `.wayfinding` | 내장 | 그 종류의 파일을 내장 모양 대신 이 템플릿 파일(설정 파일 기준 경로)로 씁니다. 키를 빼면 내장 모양을 그대로 씁니다. 템플릿 내용도 지문에 들어갑니다. [템플릿](#템플릿) 절을 보세요. |
 
 출력은 결정적입니다. 자연 정렬로 순서를 고정하고, 타임스탬프를 넣지 않고, 줄바꿈은 `\n`만 씁니다. 입력이 같으면 어느 컴퓨터에서든 바이트 단위로 같은 파일이 나옵니다.
+
+
+## 템플릿
+
+템플릿은 Cairn이 계산하는 것은 그대로 두고, 만들어지는 파일의 모양만 바꿉니다. 다른 언어로 된 이름표, 옵시디언용 `[[위키링크]]`, 카드 안의 다른 순서, front matter 칸 추가 같은 것들입니다. 그래프, 허브 규칙, 상위 `k`개 제한, 크기 목표, 지문은 바뀌지 않습니다. `templates`의 키 하나가 파일 한 종류를 맡습니다.
+
+| 키 | 언제 쓰나 | 템플릿이 받는 값 |
+|---|---|---|
+| `card` | 노드마다 | 노드 보기(아래) |
+| `body` | 노드마다(`bodies`를 켰을 때) | 노드 보기. `body`는 front matter 뒤의 글입니다 |
+| `catalog` | `CATALOG.md` | `count`, `nodes`(노드 보기 목록), `attributes`, `edgeColumns` |
+| `index` | `INDEX.md` | `count`, `counts.nodes` / `.bodies` / `.notes` / `.attributeNotes`, `source`, `attributeGroups[]`(`field`, `label`, `notes[]` — 각각 `value`, `path`, `target`), `edges[]`(`field`, `label`, `reverse`, `total`), `edgeTotal`, `hub`, `k` |
+| `note` | 중간 노트마다 | `note`(`id`, `title`, `name`, `raw`, `body`, `data`, `path`, `target`), `users`(노드 참조 목록), `via`, `label` |
+| `attributeNote` | 속성 값마다 | `field`, `label`, `value`, `path`, `target`, `count`, `members`(노드 보기 목록) |
+| `wayfinding` | 표지 사이의 블록 | 규칙 자리표시자를 값으로 받습니다: `vault`, `card`, `cardsDir`, `body`, `bodiesDir`, `search`, `source`, `attributes`, `edges` |
+
+**노드 보기**에는 `id`, `stem`, `title`(없으면 id), `name`(제목 필드에 적힌 그대로, 없으면 빈 값), `description`, `data`(front matter 전부), `body`, `headings`, `kind`, `path` / `target`(카드 경로, `.md`가 있는 것과 없는 것), `cardPath`, `cardTarget`, `bodyPath`, `bodyTarget`이 있고, 다음이 더 있습니다.
+
+- `relations.<연결 필드>.items`: 나가는 연결의 대상. 저자가 적은 순서이고, 노드 참조입니다(`sharedNeighbors.notes`를 쓰면 `via` 연결은 중간 노트).
+- `relations.<연결 필드>.reverse`: `all`(가리키는 노드 전부, 자연 정렬), `items`(앞에서 `k`개), `total`, `shown`, `truncated`.
+- `shared`: `items`(`count`가 붙은 참조), `total`(허브까지 포함해 중간 노드를 하나라도 함께 쓰는 노드 수), `shown`, `hubs`(건너뛴 허브 중간 노드 수), `capped`(`k`개에서 잘렸는지), `truncated`(`shown < total`), `threshold`, `k`. 잘림 표시는 이 값으로 직접 적습니다. 표시가 없는 목록은 빠짐없는 목록이어야 합니다.
+- `attributeNotes`: 이 노드가 속한 속성 노트(`field`, `label`, `value`, `path`, `target`).
+
+노드 참조에는 `id`, `stem`, `title`, `name`, `description`, `path`, `target`과 카드·본문 경로가 있습니다.
+
+템플릿 문법은 다음과 같습니다.
+
+```
+{{path}}                              값: 점으로 이은 경로, 지금 항목은 ".", 따옴표 문자열, 반복 안에서는 @index / @number / @first / @last
+{{path | filter:arg | filter}}        필터: json, oneLine, trim, trimEnd, upper, lower, list, compact, pluck:"field",
+                                      join:", ", count, clip:n (합쳐서 n글자), truncate:n (n글자 뒤에 …),
+                                      cell (마크다운 표 칸. cell:"／" 처럼 | 를 다른 글자로 바꿀 수 있음), default:"x"
+{{#if path}} … {{else}} … {{/if}}     {{#unless}} 도 있음. 거짓으로 보는 값: 없음, null, false, 0, "", []
+{{#each path sep=" · "}} … {{else}} … {{/each}}
+{{#with path}} … {{/with}}
+{{#filter json}} … {{/filter}}        안쪽을 먼저 그린 뒤 그 글에 필터를 적용
+{{! 주석 }}
+```
+
+블록 태그 하나만 있는 줄은 줄바꿈까지 함께 지우므로, 블록 태그를 한 줄에 따로 두어도 빈 줄이 남지 않습니다. 끼워 넣은 값은 다시 해석하지 않습니다. 문법 오류에는 템플릿 파일 이름과 줄 번호가 붙습니다. 옵시디언 방식 카드의 예는 다음과 같습니다.
+
+```
+# {{id}} {{name}}
+
+- Depends on: {{#each relations.depends_on.items sep=" · "}}[[{{id}}]] {{name}}{{else}}none{{/each}}
+- Shares evidence with: {{#if shared.total}}{{#each shared.items sep=" · "}}[[{{id}}]] ×{{count}}{{else}}none shown{{/each}}{{#if shared.truncated}} ({{shared.shown}} of {{shared.total}} shown){{/if}}{{else}}none{{/if}}
+- Full text: [[{{bodyTarget}}]]
+```
+
+## 라이브러리로 쓰기
+
+`src/index.mjs`는 CLI가 쓰는 함수를 그대로 내보냅니다. `planNodes(config, { nodes, notes })`는 이미 읽어 둔 문서(`nodes`: `{ id?, rel?, data, body }`, `notes`: `{ id?, rel?, raw, data, body }`)로 볼트를 계획해 `{ files, counts, warnings, over, graph }`를 돌려주고, 아무것도 쓰지 않습니다. 그래서 다른 시스템이 자기 읽기 코드, 권한 확인, 잠금, 원자적 교체를 그대로 두고 카드 층만 Cairn에 맡길 수 있습니다. `source` 폴더가 없으면 `resolveConfig(raw, baseDir, …)`에 `{ requireSource: false }`를 넘깁니다.
 
 ## 볼트 갱신
 

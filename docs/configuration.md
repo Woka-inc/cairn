@@ -97,8 +97,70 @@ All paths in the config are relative to its folder. `source.dir` is the folder t
 | `wayfinding.rules.topical` / `.attribute` / `.relation` / `.composition` | built in | Rule templates. Placeholders: `{vault}`, `{search}`, `{attributes}`, `{edges}`, `{expanded}`, `{omitted}` (the sentence about rows left out by `kindField`), `{source}`. |
 | `wayfinding.general` | four general rules | Replaces the general rules. |
 | `wayfinding.extraRules` | `[]` | Extra rule lines appended after the four types. |
+| `wayfinding.markers` | `{ "start": "<!-- cairn:wayfinding:start -->", "end": "<!-- cairn:wayfinding:end -->" }` | Markers around the block in the instruction file. Change them when the file already uses its own markers; `guide --write` and `check` use the configured pair. |
+| Layout placeholders in rules | — | Besides the placeholders above, rule templates and `wayfinding.search` may use `{card}` (`<vault>/<card path with <id>>`), `{cardsDir}`, `{body}`, and `{bodiesDir}`, which follow `layout`. The default rules use them, so they stay correct when `layout` moves cards or bodies. |
+| `layout.cards` | `"cards/{stem}.md"` | Where each card goes inside the vault. A relative path that ends in `.md` and contains `{stem}` (the file-safe id). Size targets and `check` find cards by this pattern. |
+| `layout.bodies` | `"bodies/{stem}.md"` | Where each full body goes (for example `"text/{stem}-text.md"`). |
+| `layout.wayfinding` | `"WAYFINDING.md"` | Path of the wayfinding file inside the vault, or `null` to leave it out (when the block lives only in the instruction file). |
+| `sharedNeighbors.notes` | none | Write each `via` target as its own note, so the full list of nodes that share it is one file away. `include` lists globs (relative to `source.dir`) of the note files; those files are not nodes. With notes, the `via` edge points at notes: a target without a note is dropped with a warning. |
+| `sharedNeighbors.notes.include` / `.idField` / `.titleField` / `.path` | `[]` / `"$filename"` / `"title"` / `"<via>/{stem}.md"` | Note files, how their id and title are read, and where each note goes. A note is the source file as written plus the list of nodes that use it. Note contents count toward the fingerprint. |
+| `attributeNotes.attributes` | none | Fields (names or `{ "field", "label" }`) that get one note per value, listing the nodes with that value. Each card can link the notes it belongs to (template value `attributeNotes`). |
+| `attributeNotes.path` | `"attributes/{attribute}-{value}.md"` | Where each attribute note goes. Characters that are unsafe in file names or `[[wikilinks]]` (`\ / : * ? " < > \| # ^ [ ]` and whitespace) become `-`. |
+| `templates.card` / `.body` / `.catalog` / `.index` / `.note` / `.attributeNote` / `.wayfinding` | built in | Template files (relative to the config) that replace the built-in layout of that kind of file. Leave a key out to keep the built-in layout. Template contents count toward the fingerprint. See [Templates](#templates). |
 
 Output is deterministic: stable natural sorting, no timestamps, `\n` line endings. The same inputs give byte-identical files on every machine.
+
+
+## Templates
+
+Templates change how generated files look without changing what Cairn computes: labels in another language, `[[wikilinks]]` for Obsidian, a different card order, extra front matter. The graph, the hub rule, the top-`k` cap, the size targets, and the fingerprint stay the same. Each key in `templates` replaces one kind of file:
+
+| Key | Rendered for | Values the template sees |
+|---|---|---|
+| `card` | each node | the node view (below) |
+| `body` | each node (when `bodies` is on) | the node view; `body` is the text after the front matter |
+| `catalog` | `CATALOG.md` | `count`, `nodes` (node views), `attributes`, `edgeColumns` |
+| `index` | `INDEX.md` | `count`, `counts.nodes` / `.bodies` / `.notes` / `.attributeNotes`, `source`, `attributeGroups[]` (`field`, `label`, `notes[]` with `value`, `path`, `target`), `edges[]` (`field`, `label`, `reverse`, `total`), `edgeTotal`, `hub`, `k` |
+| `note` | each intermediate note | `note` (`id`, `title`, `name`, `raw`, `body`, `data`, `path`, `target`), `users` (node references), `via`, `label` |
+| `attributeNote` | each attribute value | `field`, `label`, `value`, `path`, `target`, `count`, `members` (node views) |
+| `wayfinding` | the block between the markers | the rule placeholders as values: `vault`, `card`, `cardsDir`, `body`, `bodiesDir`, `search`, `source`, `attributes`, `edges` |
+
+A **node view** has `id`, `stem`, `title` (falls back to the id), `name` (the title field as written, or empty), `description`, `data` (all front matter), `body`, `headings`, `kind`, `path` / `target` (the card path with and without `.md`), `cardPath`, `cardTarget`, `bodyPath`, `bodyTarget`, and:
+
+- `relations.<edge field>.items`: forward targets in author order (node references; intermediate notes when `sharedNeighbors.notes` is set).
+- `relations.<edge field>.reverse`: `all` (every source, naturally sorted), `items` (the first `k`), `total`, `shown`, `truncated`.
+- `shared`: `items` (references with `count`), `total` (all nodes that share any intermediate, hubs included), `shown`, `hubs` (skipped hub intermediates), `capped` (cut at `k`), `truncated` (`shown < total`), `threshold`, `k`. Write your own truncation marker from these; a list without a marker must be complete.
+- `attributeNotes`: the attribute notes the node belongs to (`field`, `label`, `value`, `path`, `target`).
+
+A node reference has `id`, `stem`, `title`, `name`, `description`, `path`, `target`, and the card and body paths.
+
+The template language:
+
+```
+{{path}}                              value: a dotted path, "." for the current item, a "string", or @index / @number / @first / @last in a loop
+{{path | filter:arg | filter}}        filters: json, oneLine, trim, trimEnd, upper, lower, list, compact, pluck:"field",
+                                      join:", ", count, clip:n (n characters in total), truncate:n (n characters, then …),
+                                      cell (Markdown table cell; cell:"／" replaces | with another character), default:"x"
+{{#if path}} … {{else}} … {{/if}}     also {{#unless}}; falsy: missing, null, false, 0, "", []
+{{#each path sep=" · "}} … {{else}} … {{/each}}
+{{#with path}} … {{/with}}
+{{#filter json}} … {{/filter}}        render the inside, then apply filters to the text
+{{! comment }}
+```
+
+A line that holds only one block tag is removed together with its line break, so block tags can stand on their own lines. Inserted values are never parsed again. Syntax errors name the template file and line. For example, a card in Obsidian style:
+
+```
+# {{id}} {{name}}
+
+- Depends on: {{#each relations.depends_on.items sep=" · "}}[[{{id}}]] {{name}}{{else}}none{{/each}}
+- Shares evidence with: {{#if shared.total}}{{#each shared.items sep=" · "}}[[{{id}}]] ×{{count}}{{else}}none shown{{/each}}{{#if shared.truncated}} ({{shared.shown}} of {{shared.total}} shown){{/if}}{{else}}none{{/if}}
+- Full text: [[{{bodyTarget}}]]
+```
+
+## Library use
+
+`src/index.mjs` exports the functions the CLI is built on. `planNodes(config, { nodes, notes })` plans a vault from documents you have already read (`nodes`: `{ id?, rel?, data, body }`; `notes`: `{ id?, rel?, raw, data, body }`) and returns `{ files, counts, warnings, over, graph }` without writing anything, so a host system can keep its own reader, access checks, locking, and atomic replacement. Pass `{ requireSource: false }` to `resolveConfig(raw, baseDir, …)` when there is no `source` folder.
 
 ## Keeping the vault fresh
 
