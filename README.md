@@ -155,7 +155,7 @@ Savings depend on your notes, your question mix, and your harness. [`docs/measur
 - **Pre-expanded neighborhoods are untested as a cause.** Savings on relation questions came mostly from reading a small card instead of a large note; only one of the 30 questions needed a two-hop neighbor.
 - **Wayfinding alone did not help significantly**; it helped together with compact cards.
 - **Topical-heavy workloads may cost more** than a search-only setup. In the paper's setting Cairn lost its advantage once topical lookups exceeded about 70% of questions in raw tokens, or about 95% in list-price cost.
-- **This code generalizes the in-house generator** used in the paper. Its defaults follow the measured design (5 KB cards, hub exclusion, top-k lists, explicit truncation markers, size checks before replacement), but this exact code has not itself been measured.
+- **Measured with this code only on the paper's testbed.** There, this code with a testbed-specific configuration and templates now builds the production vault, byte for byte identical to the output of the in-house generator used in the paper's re-measurement. The default templates in this repository lay files out differently and have not been measured.
 - **Front matter** is read with a parser for the YAML subset that notes use (mappings, lists, flow collections, quoted and block scalars); anchors, aliases, and tags are rejected with a line number.
 
 ## Citation
