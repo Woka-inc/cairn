@@ -1,0 +1,155 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Install with one prompt",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "you",
+      "label": "You"
+    },
+    {
+      "id": "agent",
+      "label": "Coding agent"
+    },
+    {
+      "id": "cli",
+      "label": "Cairn CLI"
+    }
+  ],
+  "mainPath": [
+    "paste",
+    "ask",
+    "init",
+    "inspect",
+    "build",
+    "guide",
+    "report"
+  ],
+  "nodes": [
+    {
+      "id": "paste",
+      "lane": "you",
+      "col": 0,
+      "type": "external",
+      "label": "Paste the prompt",
+      "sublabel": "INSTALL_PROMPT.md",
+      "width": 176
+    },
+    {
+      "id": "ask",
+      "lane": "agent",
+      "col": 1,
+      "type": "backend",
+      "label": "Ask once",
+      "sublabel": "KB path, rules file",
+      "width": 176
+    },
+    {
+      "id": "init",
+      "lane": "cli",
+      "col": 2,
+      "type": "messagebus",
+      "label": "cairn init",
+      "sublabel": "draft config only",
+      "width": 176
+    },
+    {
+      "id": "inspect",
+      "lane": "agent",
+      "col": 3,
+      "type": "backend",
+      "label": "Read real notes",
+      "sublabel": "write the config",
+      "width": 176
+    },
+    {
+      "id": "build",
+      "lane": "cli",
+      "col": 4,
+      "type": "messagebus",
+      "label": "cairn build",
+      "sublabel": "size targets checked",
+      "width": 176
+    },
+    {
+      "id": "guide",
+      "lane": "cli",
+      "col": 5,
+      "type": "messagebus",
+      "label": "guide --write, check",
+      "sublabel": "rules in, vault verified",
+      "width": 176
+    },
+    {
+      "id": "report",
+      "lane": "you",
+      "col": 5,
+      "type": "frontend",
+      "label": "Report",
+      "sublabel": "pick rebuild mode",
+      "width": 176
+    }
+  ],
+  "edges": [
+    {
+      "id": "paste-ask",
+      "from": "paste",
+      "to": "ask"
+    },
+    {
+      "id": "ask-init",
+      "from": "ask",
+      "to": "init"
+    },
+    {
+      "id": "init-inspect",
+      "from": "init",
+      "to": "inspect",
+      "label": "hint only"
+    },
+    {
+      "id": "inspect-build",
+      "from": "inspect",
+      "to": "build",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "build-guide",
+      "from": "build",
+      "to": "guide"
+    },
+    {
+      "id": "guide-report",
+      "from": "guide",
+      "to": "report",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "What changes in your project",
+      "items": [
+        "New: cairn.config.json and the generated vault",
+        "Edited: only the marked block in your rules file"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "What never happens",
+      "items": [
+        "Your notes are not modified, moved, or sent anywhere",
+        "Nothing is committed or pushed unless you ask"
+      ]
+    }
+  ]
+}

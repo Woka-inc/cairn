@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "How Cairn works",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "components": [
+    {
+      "id": "notes",
+      "type": "database",
+      "label": "Linked Markdown notes",
+      "sublabel": "your knowledge base",
+      "pos": [
+        40,
+        250
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "build",
+      "type": "backend",
+      "label": "cairn build",
+      "sublabel": "deterministic generator",
+      "tag": "rebuild on change",
+      "pos": [
+        260,
+        250
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "cards",
+      "type": "database",
+      "label": "Compact cards",
+      "sublabel": "≤ 5 KB, relations pre-expanded",
+      "pos": [
+        500,
+        100
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "catalog",
+      "type": "database",
+      "label": "CATALOG.md",
+      "sublabel": "one row per node",
+      "pos": [
+        500,
+        250
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "bodies",
+      "type": "database",
+      "label": "Body files",
+      "sublabel": "full text, opened on demand",
+      "pos": [
+        500,
+        400
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "guide",
+      "type": "security",
+      "label": "Wayfinding block",
+      "sublabel": "in CLAUDE.md / AGENTS.md",
+      "pos": [
+        840,
+        70
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "Coding agent",
+      "sublabel": "Claude Code, Codex, ...",
+      "pos": [
+        840,
+        250
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "search",
+      "type": "cloud",
+      "label": "Existing search",
+      "sublabel": "optional",
+      "pos": [
+        840,
+        430
+      ],
+      "size": [
+        160,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Cairn vault (generated, read-only)",
+      "wraps": [
+        "cards",
+        "catalog",
+        "bodies"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "read-notes",
+      "from": "notes",
+      "to": "build",
+      "label": "read"
+    },
+    {
+      "id": "write-cards",
+      "from": "build",
+      "to": "cards"
+    },
+    {
+      "id": "write-catalog",
+      "from": "build",
+      "to": "catalog",
+      "variant": "emphasis"
+    },
+    {
+      "id": "write-bodies",
+      "from": "build",
+      "to": "bodies"
+    },
+    {
+      "id": "rules-to-agent",
+      "from": "guide",
+      "to": "agent",
+      "label": "where to look first",
+      "variant": "security",
+      "labelDy": 24
+    },
+    {
+      "id": "relation-lookup",
+      "from": "agent",
+      "to": "cards",
+      "label": "relations",
+      "labelSegment": 1
+    },
+    {
+      "id": "attribute-filter",
+      "from": "agent",
+      "to": "catalog",
+      "label": "attribute filter",
+      "variant": "emphasis",
+      "labelDy": 16
+    },
+    {
+      "id": "open-body",
+      "from": "agent",
+      "to": "bodies",
+      "label": "only if needed",
+      "variant": "dashed"
+    },
+    {
+      "id": "topic-search",
+      "from": "agent",
+      "to": "search",
+      "label": "topic",
+      "variant": "dashed",
+      "labelDy": 24
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Indexing time",
+      "items": [
+        "One pass over the notes writes cards, the attribute table, and body files",
+        "Reverse and two-hop edges are computed once, not per question"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Query time",
+      "items": [
+        "The agent reads small files chosen by question type",
+        "Full bodies are opened only when a card is not enough"
+      ]
+    }
+  ]
+}

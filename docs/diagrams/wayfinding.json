@@ -1,0 +1,207 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Wayfinding: where the agent looks first",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "agent",
+      "label": "Agent"
+    },
+    {
+      "id": "topical",
+      "label": "Topical lookup"
+    },
+    {
+      "id": "attribute",
+      "label": "Attribute filter"
+    },
+    {
+      "id": "relation",
+      "label": "Relation lookup"
+    },
+    {
+      "id": "multi",
+      "label": "Multi-node composition"
+    }
+  ],
+  "mainPath": [
+    "question",
+    "classify",
+    "card",
+    "answer"
+  ],
+  "nodes": [
+    {
+      "id": "question",
+      "lane": "agent",
+      "col": 0,
+      "type": "external",
+      "label": "Question",
+      "sublabel": "from the user",
+      "width": 172
+    },
+    {
+      "id": "classify",
+      "lane": "agent",
+      "col": 1,
+      "type": "backend",
+      "label": "Pick the type",
+      "sublabel": "wayfinding rules",
+      "width": 172
+    },
+    {
+      "id": "answer",
+      "lane": "agent",
+      "col": 4,
+      "type": "frontend",
+      "label": "Answer",
+      "sublabel": "node ids + reasons",
+      "width": 172
+    },
+    {
+      "id": "search",
+      "lane": "topical",
+      "col": 2,
+      "type": "cloud",
+      "label": "Search cards",
+      "sublabel": "or existing search",
+      "width": 172
+    },
+    {
+      "id": "body",
+      "lane": "topical",
+      "col": 3,
+      "type": "database",
+      "label": "Body file",
+      "sublabel": "only if no hit",
+      "width": 172
+    },
+    {
+      "id": "catalog",
+      "lane": "attribute",
+      "col": 2,
+      "type": "database",
+      "label": "CATALOG.md",
+      "sublabel": "one row per node",
+      "width": 172
+    },
+    {
+      "id": "card",
+      "lane": "relation",
+      "col": 2,
+      "type": "database",
+      "label": "Card relations",
+      "sublabel": "reverse + two-hop",
+      "width": 172
+    },
+    {
+      "id": "rest",
+      "lane": "relation",
+      "col": 3,
+      "type": "database",
+      "label": "Edge columns",
+      "sublabel": "only if truncated",
+      "width": 172
+    },
+    {
+      "id": "pertopic",
+      "lane": "multi",
+      "col": 2,
+      "type": "cloud",
+      "label": "Search per topic",
+      "sublabel": "one query each",
+      "width": 172
+    },
+    {
+      "id": "combine",
+      "lane": "multi",
+      "col": 3,
+      "type": "database",
+      "label": "Order with CATALOG",
+      "sublabel": "attribute columns",
+      "width": 172
+    }
+  ],
+  "edges": [
+    {
+      "id": "ask",
+      "from": "question",
+      "to": "classify"
+    },
+    {
+      "id": "to-search",
+      "from": "classify",
+      "to": "search",
+      "variant": "dashed"
+    },
+    {
+      "id": "to-catalog",
+      "from": "classify",
+      "to": "catalog",
+      "variant": "dashed"
+    },
+    {
+      "id": "to-card",
+      "from": "classify",
+      "to": "card",
+      "variant": "emphasis"
+    },
+    {
+      "id": "to-pertopic",
+      "from": "classify",
+      "to": "pertopic",
+      "variant": "dashed"
+    },
+    {
+      "id": "search-body",
+      "from": "search",
+      "to": "body",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "card-rest",
+      "from": "card",
+      "to": "rest",
+      "label": "(K of N shown)",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "pertopic-combine",
+      "from": "pertopic",
+      "to": "combine"
+    },
+    {
+      "id": "card-answer",
+      "from": "card",
+      "to": "answer",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One rule per question type",
+      "items": [
+        "The rules sit in CLAUDE.md or AGENTS.md between Cairn markers",
+        "Each rule names the first file to open"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Stop early",
+      "items": [
+        "\"none\" on a card means no such neighbor exists",
+        "Search further only when a list says it was truncated"
+      ]
+    }
+  ]
+}
